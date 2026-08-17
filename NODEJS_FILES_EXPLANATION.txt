@@ -1,0 +1,67 @@
+Node.js Files Explanation (12 Backend Files)
+===========================================
+
+1. app.js
+   Role: Thin bootstrap entrypoint that only calls startServer from src/server.js.
+   Key functions/components:
+   - No locally declared functions.
+
+2. src/app.js
+   Role: Builds the Express app, wires config, DB connection, middleware, and routes.
+   Key functions/components:
+   - No locally declared functions; this file composes the app runtime.
+
+3. src/server.js
+   Role: Controls runtime startup lifecycle.
+   Key functions/components:
+   - startServer: initializes database bootstrap and starts HTTP listening.
+
+4. src/config/env.js
+   Role: Loads environment variables and resolves app/DB configuration.
+   Key functions/components:
+   - No locally declared functions.
+
+5. src/config/database.js
+   Role: Creates the mysql2 connection object used by backend modules.
+   Key functions/components:
+   - No locally declared functions.
+
+6. src/core/runtime.js
+   Role: Core runtime helpers: auth/session utilities, schema ensure routines, and shared mappers/normalizers.
+   Key functions/components:
+   - Role/session helpers: normalizeRoleKey, getStoredRoleName, parseCookies, getSessionIdFromRequest, getSessionFromRequest.
+   - Routing/access helpers: buildPathWithParams, getRoleRedirectPath, getAllowedRolesForPath, hasRequiredRole, requireRoles.
+   - DB bootstrap: initializeDatabase + ensure* schema functions.
+   - Entity code system: normalizeEntityCodeInput, generateSequentialCode, resolveEntityCode, findCodeConflict, compareEntityCodes.
+   - Dock domain helpers: berth normalization, slot allocation, status and resource fetchers.
+   - Mapping/normalization for API payloads: mapIncomingVesselRow, mapDischargePlanRow, mapDischargeTaskRow, etc.
+
+7. src/middlewares/authGuard.js
+   Role: Central authentication and page/API access guard.
+   Key functions/components:
+   - createAuthGuard: returns the request middleware that enforces session and role checks.
+
+8. src/routes/index.js
+   Role: Single place to register all route modules.
+   Key functions/components:
+   - registerRoutes: mounts auth/admin/dock/driver route sets.
+
+9. src/routes/authRoutes.js
+   Role: Authentication/session endpoints and login redirects.
+   Key functions/components:
+   - registerAuthRoutes: mounts login/logout/session-status and login pages routes.
+
+10. src/routes/adminRoutes.js
+   Role: Admin/business endpoints for users, suppliers, machines, warehouses, locations, inventory, and requests.
+   Key functions/components:
+   - registerAdminRoutes: mounts admin and inventory operational APIs.
+
+11. src/routes/dockRoutes.js
+   Role: Dock manager operational workflows (vessels, containers, discharge plans, tasks, dock requests).
+   Key functions/components:
+   - registerDockRoutes: mounts dock reception/planning/execution APIs.
+
+12. src/routes/driverRoutes.js
+   Role: Driver workflows (dashboard, actions on requests/tasks, profile updates).
+   Key functions/components:
+   - registerDriverRoutes: mounts driver-specific APIs.

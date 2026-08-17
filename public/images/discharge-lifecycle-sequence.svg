@@ -1,0 +1,267 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2100" height="3400" viewBox="0 0 2100 3400" role="img" aria-labelledby="title desc">
+  <title id="title">Full Discharge Lifecycle Sequence Diagram</title>
+  <desc id="desc">A full sequence diagram showing discharge plan generation, driver assignment, driver response, plan activation, completion, failure, and driver or machine status updates.</desc>
+  <defs>
+    <style>
+      .bg { fill: #071a24; }
+      .frame { fill: #0c2330; stroke: #1f4d63; stroke-width: 2; rx: 24; }
+      .actor { fill: #133547; stroke: #26c6da; stroke-width: 2; rx: 16; }
+      .actorText { fill: #f4fbff; font-family: Tahoma, Arial, sans-serif; font-size: 19px; font-weight: 700; text-anchor: middle; }
+      .actorSub { fill: #9fc0cf; font-family: Tahoma, Arial, sans-serif; font-size: 14px; text-anchor: middle; }
+      .lane { stroke: #35687d; stroke-width: 2; stroke-dasharray: 8 10; opacity: 0.8; }
+      .title { fill: #f7fcff; font-family: Tahoma, Arial, sans-serif; font-size: 36px; font-weight: 700; }
+      .subtitle { fill: #a8c4d1; font-family: Tahoma, Arial, sans-serif; font-size: 18px; }
+      .group { fill: none; stroke: #f2c66d; stroke-width: 2; stroke-dasharray: 10 8; rx: 22; }
+      .groupLabel { fill: #f2c66d; font-family: Tahoma, Arial, sans-serif; font-size: 18px; font-weight: 700; }
+      .arrow { stroke: #8beaf4; stroke-width: 3; fill: none; marker-end: url(#arrowHead); }
+      .returnArrow { stroke: #f2c66d; stroke-width: 2.5; fill: none; marker-end: url(#returnHead); stroke-dasharray: 8 8; }
+      .stepText { fill: #eff8fc; font-family: Tahoma, Arial, sans-serif; font-size: 15px; }
+      .box { fill: #102d3d; stroke: #437189; stroke-width: 1.5; rx: 14; }
+      .boxAlt { fill: #103848; stroke: #35ccb6; stroke-width: 1.5; rx: 14; }
+      .boxWarn { fill: #3a2612; stroke: #f2c66d; stroke-width: 1.5; rx: 14; }
+      .note { fill: #0b3140; stroke: #28bfa7; stroke-width: 1.5; rx: 14; }
+      .noteText { fill: #d7fff8; font-family: Tahoma, Arial, sans-serif; font-size: 14px; }
+    </style>
+    <marker id="arrowHead" markerWidth="14" markerHeight="10" refX="11" refY="5" orient="auto">
+      <polygon points="0,0 14,5 0,10" fill="#8beaf4"/>
+    </marker>
+    <marker id="returnHead" markerWidth="14" markerHeight="10" refX="11" refY="5" orient="auto">
+      <polygon points="0,0 14,5 0,10" fill="#f2c66d"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="2100" height="3400"/>
+  <rect class="frame" x="28" y="28" width="2044" height="3344"/>
+
+  <text class="title" x="1050" y="78" text-anchor="middle">Full Discharge Lifecycle - Sequence Diagram</text>
+  <text class="subtitle" x="1050" y="110" text-anchor="middle">من توليد خطة التفريغ حتى التعيين والرد والبدء والإكمال أو التعذر مع تحديث حالة السائق والمعدة</text>
+
+  <rect class="actor" x="40" y="145" width="220" height="74"/>
+  <rect class="actor" x="320" y="145" width="220" height="74"/>
+  <rect class="actor" x="600" y="145" width="220" height="74"/>
+  <rect class="actor" x="880" y="145" width="250" height="74"/>
+  <rect class="actor" x="1190" y="145" width="250" height="74"/>
+  <rect class="actor" x="1500" y="145" width="250" height="74"/>
+  <rect class="actor" x="1810" y="145" width="240" height="74"/>
+
+  <text class="actorText" x="150" y="174">Dock Manager UI</text>
+  <text class="actorSub" x="150" y="198">مدير الرصيف</text>
+  <text class="actorText" x="430" y="174">Mechanic UI</text>
+  <text class="actorSub" x="430" y="198">مدير الآليات</text>
+  <text class="actorText" x="710" y="174">Driver UI</text>
+  <text class="actorSub" x="710" y="198">السائق</text>
+  <text class="actorText" x="1005" y="174">Discharge API</text>
+  <text class="actorSub" x="1005" y="198">routes/discharge.routes.js</text>
+  <text class="actorText" x="1315" y="174">Dependencies Service</text>
+  <text class="actorSub" x="1315" y="198">machines / drivers / auto berth</text>
+  <text class="actorText" x="1625" y="174">Dock Utils</text>
+  <text class="actorSub" x="1625" y="198">priority / destination / completion status</text>
+  <text class="actorText" x="1930" y="174">Database</text>
+  <text class="actorSub" x="1930" y="198">plans / tasks / vessels / containers / users / machines</text>
+
+  <line class="lane" x1="150" y1="240" x2="150" y2="3250"/>
+  <line class="lane" x1="430" y1="240" x2="430" y2="3250"/>
+  <line class="lane" x1="710" y1="240" x2="710" y2="3250"/>
+  <line class="lane" x1="1005" y1="240" x2="1005" y2="3250"/>
+  <line class="lane" x1="1315" y1="240" x2="1315" y2="3250"/>
+  <line class="lane" x1="1625" y1="240" x2="1625" y2="3250"/>
+  <line class="lane" x1="1930" y1="240" x2="1930" y2="3250"/>
+
+  <rect class="group" x="55" y="270" width="1960" height="360"/>
+  <text class="groupLabel" x="80" y="296">1. Generate Draft Plan</text>
+
+  <path class="arrow" d="M150 340 H1005"/>
+  <text class="stepText" x="430" y="328">POST generate-plan(vesselId)</text>
+  <path class="arrow" d="M1005 385 H1930"/>
+  <text class="stepText" x="1270" y="373">Load vessel + expected/received count</text>
+  <path class="returnArrow" d="M1930 425 H1005"/>
+  <text class="stepText" x="1340" y="417">vessel data</text>
+  <path class="arrow" d="M1005 470 H1930"/>
+  <text class="stepText" x="1290" y="458">Load arrived/scheduled containers</text>
+  <path class="returnArrow" d="M1930 510 H1005"/>
+  <text class="stepText" x="1385" y="502">containers[]</text>
+  <path class="arrow" d="M1005 555 H1315"/>
+  <text class="stepText" x="1098" y="543">getReadyMachines()</text>
+  <path class="arrow" d="M1315 595 H1930"/>
+  <text class="stepText" x="1525" y="583">Read ready machines not tied to other plans</text>
+  <path class="returnArrow" d="M1930 635 H1315"/>
+  <text class="stepText" x="1605" y="627">machines[]</text>
+  <path class="returnArrow" d="M1315 675 H1005"/>
+  <text class="stepText" x="1115" y="667">available machines</text>
+
+  <rect class="note" x="1540" y="315" width="420" height="118"/>
+  <text class="noteText" x="1560" y="347">إذا كانت حالة الباخرة غير صالحة أو عدد الحاويات مختلف</text>
+  <text class="noteText" x="1560" y="373">ولا يوجد سبب shortage/extra، يتوقف التسلسل هنا برسالة خطأ.</text>
+  <text class="noteText" x="1560" y="399">ولا يتم إنشاء أي Plan.</text>
+
+  <rect class="group" x="55" y="665" width="1960" height="275"/>
+  <text class="groupLabel" x="80" y="691">2. Resolve Auto Destinations + Sort + Persist</text>
+
+  <path class="arrow" d="M1005 740 H1315"/>
+  <text class="stepText" x="1075" y="728">reassignAutoContainerDestinations()</text>
+  <path class="arrow" d="M1315 780 H1930"/>
+  <text class="stepText" x="1545" y="768">Read berth occupancy / current loads</text>
+  <path class="returnArrow" d="M1930 820 H1315"/>
+  <text class="stepText" x="1610" y="812">berth load state</text>
+  <path class="arrow" d="M1315 860 H1625"/>
+  <text class="stepText" x="1405" y="848">Pick best berth for auto destinations</text>
+  <path class="returnArrow" d="M1625 900 H1315"/>
+  <text class="stepText" x="1410" y="892">resolved destination types</text>
+  <path class="returnArrow" d="M1315 940 H1005"/>
+  <text class="stepText" x="1100" y="932">resolved containers</text>
+
+  <path class="arrow" d="M1005 980 H1625"/>
+  <text class="stepText" x="1200" y="968">Sort by priority, destination, container number</text>
+  <path class="returnArrow" d="M1625 1020 H1005"/>
+  <text class="stepText" x="1220" y="1012">sorted order</text>
+
+  <rect class="boxAlt" x="890" y="1048" width="230" height="68"/>
+  <text class="stepText" x="915" y="1080">Build taskRows[]</text>
+  <text class="stepText" x="915" y="1100">Round-robin machine assignment</text>
+
+  <path class="arrow" d="M1005 1145 H1930"/>
+  <text class="stepText" x="1230" y="1133">BEGIN TX → persist auto destination changes</text>
+  <path class="arrow" d="M1005 1185 H1930"/>
+  <text class="stepText" x="1250" y="1173">Cancel previous draft tasks + draft plans</text>
+  <path class="arrow" d="M1005 1225 H1930"/>
+  <text class="stepText" x="1205" y="1213">Insert discharge plan(status=draft)</text>
+  <path class="arrow" d="M1005 1265 H1930"/>
+  <text class="stepText" x="1210" y="1253">Insert discharge tasks(status=planned)</text>
+  <path class="arrow" d="M1005 1305 H1930"/>
+  <text class="stepText" x="1220" y="1293">Update containers → scheduled, vessel → discharge_planned</text>
+  <path class="arrow" d="M1005 1345 H1930"/>
+  <text class="stepText" x="1188" y="1333">COMMIT</text>
+  <path class="returnArrow" d="M1930 1385 H150"/>
+  <text class="stepText" x="950" y="1377">201 Created - plan draft generated successfully</text>
+
+  <rect class="group" x="55" y="1430" width="1960" height="290"/>
+  <text class="groupLabel" x="80" y="1456">3. Mechanic Assignment</text>
+
+  <path class="arrow" d="M430 1510 H1005"/>
+  <text class="stepText" x="600" y="1498">GET mechanic/discharge-tasks</text>
+  <path class="arrow" d="M1005 1550 H1315"/>
+  <text class="stepText" x="1088" y="1538">getAvailableDockDrivers()</text>
+  <path class="arrow" d="M1315 1590 H1930"/>
+  <text class="stepText" x="1515" y="1578">Read available drivers + draft/active conflicts</text>
+  <path class="returnArrow" d="M1930 1630 H1005"/>
+  <text class="stepText" x="1350" y="1622">drivers + tasks</text>
+  <path class="returnArrow" d="M1005 1670 H430"/>
+  <text class="stepText" x="650" y="1662">tasks + availableDrivers</text>
+  <path class="arrow" d="M430 1710 H1005"/>
+  <text class="stepText" x="640" y="1698">POST assign-driver(taskId, driverUserId)</text>
+  <path class="arrow" d="M1005 1750 H1930"/>
+  <text class="stepText" x="1250" y="1738">Validate task status + driver role + conflict check</text>
+  <path class="arrow" d="M1005 1790 H1930"/>
+  <text class="stepText" x="1240" y="1778">Update task.driver_user_id + response_status=pending</text>
+  <path class="returnArrow" d="M1930 1830 H430"/>
+  <text class="stepText" x="1120" y="1822">Assignment success</text>
+
+  <rect class="note" x="1515" y="1475" width="445" height="110"/>
+  <text class="noteText" x="1535" y="1507">إذا كان السائق مشغولًا أو لديه مهمة draft/active أخرى</text>
+  <text class="noteText" x="1535" y="1533">يرجع النظام Conflict ولا يتم التحديث.</text>
+  <text class="noteText" x="1535" y="1559">يسمح فقط بإعادة نفس السائق إذا كانت محاولته السابقة failed.</text>
+
+  <rect class="group" x="55" y="1865" width="1960" height="320"/>
+  <text class="groupLabel" x="80" y="1891">4. Driver Response</text>
+
+  <path class="arrow" d="M710 1940 H1005"/>
+  <text class="stepText" x="810" y="1928">POST respond(taskId, decision)</text>
+  <path class="arrow" d="M1005 1980 H1930"/>
+  <text class="stepText" x="1210" y="1968">Load current driver + assigned task</text>
+
+  <rect class="boxWarn" x="565" y="2018" width="280" height="88"/>
+  <text class="stepText" x="590" y="2048">Busy path:</text>
+  <text class="stepText" x="590" y="2071">Update driver_response_status=busy</text>
+  <text class="stepText" x="590" y="2094">Notify mechanic for reassignment</text>
+
+  <rect class="boxAlt" x="900" y="2018" width="285" height="102"/>
+  <text class="stepText" x="925" y="2048">Accepted path (Transaction):</text>
+  <text class="stepText" x="925" y="2071">task → in_progress</text>
+  <text class="stepText" x="925" y="2094">plan → active, container/vessel → discharging</text>
+  <path class="arrow" d="M1005 2148 H1930"/>
+  <text class="stepText" x="1270" y="2136">Update driver status → مشغول</text>
+  <path class="arrow" d="M1005 2188 H1930"/>
+  <text class="stepText" x="1265" y="2176">If machine exists: machine status → في الخدمة</text>
+  <path class="returnArrow" d="M1930 2228 H710"/>
+  <text class="stepText" x="1245" y="2220">Busy notice or task accepted successfully</text>
+
+  <rect class="group" x="55" y="2235" width="1960" height="240"/>
+  <text class="groupLabel" x="80" y="2261">5. Optional Start Plan by Dock Manager</text>
+
+  <path class="arrow" d="M150 2315 H1005"/>
+  <text class="stepText" x="380" y="2303">POST start(planId)</text>
+  <path class="arrow" d="M1005 2355 H1930"/>
+  <text class="stepText" x="1240" y="2343">Validate all tasks assigned and all drivers accepted</text>
+  <path class="arrow" d="M1005 2395 H1930"/>
+  <text class="stepText" x="1240" y="2383">TX: plan→active, tasks→in_progress, containers/vessel→discharging</text>
+  <path class="arrow" d="M1005 2435 H1930"/>
+  <text class="stepText" x="1260" y="2423">Drivers→مشغول, Machines→في الخدمة, COMMIT</text>
+  <path class="returnArrow" d="M1930 2475 H150"/>
+  <text class="stepText" x="1010" y="2467">Plan started successfully</text>
+
+  <rect class="group" x="55" y="2510" width="1960" height="400"/>
+  <text class="groupLabel" x="80" y="2536">6. Completion Path</text>
+
+  <path class="arrow" d="M710 2595 H1005"/>
+  <text class="stepText" x="805" y="2583">POST complete(taskId) by driver</text>
+  <path class="arrow" d="M1005 2635 H1930"/>
+  <text class="stepText" x="1215" y="2623">Update task.driver_response_status=completed</text>
+  <path class="returnArrow" d="M1930 2675 H710"/>
+  <text class="stepText" x="1215" y="2667">Waiting for Dock Manager confirmation</text>
+
+  <path class="arrow" d="M150 2725 H1005"/>
+  <text class="stepText" x="392" y="2713">POST complete(taskId, finalLocation) by dock manager</text>
+  <path class="arrow" d="M1005 2765 H1625"/>
+  <text class="stepText" x="1180" y="2753">getDockBerthKeyFromDestination + getContainerCompletionStatus</text>
+  <path class="returnArrow" d="M1625 2805 H1005"/>
+  <text class="stepText" x="1178" y="2797">destination berth / final status</text>
+  <path class="arrow" d="M1005 2845 H1315"/>
+  <text class="stepText" x="1095" y="2833">allocateDockSlotForContainer() if berth destination</text>
+  <path class="arrow" d="M1315 2885 H1930"/>
+  <text class="stepText" x="1530" y="2873">Reserve free dock slot</text>
+  <path class="returnArrow" d="M1930 2925 H1005"/>
+  <text class="stepText" x="1490" y="2917">slot_code / final location</text>
+
+  <path class="arrow" d="M1005 2965 H1930"/>
+  <text class="stepText" x="1235" y="2953">TX: task→completed, container→final status + final location</text>
+  <path class="arrow" d="M1005 3005 H1930"/>
+  <text class="stepText" x="1270" y="2993">If no remaining tasks: plan→completed, vessel→completed</text>
+  <path class="arrow" d="M1005 3045 H1930"/>
+  <text class="stepText" x="1228" y="3033">If no other active tasks for driver: Users→متاح</text>
+  <path class="arrow" d="M1005 3085 H1930"/>
+  <text class="stepText" x="1240" y="3073">If no other active tasks for machine: Machines→جاهزة</text>
+  <path class="arrow" d="M1005 3125 H1930"/>
+  <text class="stepText" x="1188" y="3113">COMMIT</text>
+  <path class="returnArrow" d="M1930 3165 H150"/>
+  <text class="stepText" x="1050" y="3157">Container unload confirmed successfully</text>
+
+  <rect class="group" x="55" y="2920" width="1960" height="370"/>
+  <text class="groupLabel" x="80" y="2946">7. Failure / Reassignment Path</text>
+
+  <path class="arrow" d="M710 3000 H1005"/>
+  <text class="stepText" x="812" y="2988">POST fail(taskId, note)</text>
+  <path class="arrow" d="M1005 3040 H1930"/>
+  <text class="stepText" x="1225" y="3028">Validate driver owns task and task is accepted/in_progress</text>
+  <path class="arrow" d="M1005 3080 H1930"/>
+  <text class="stepText" x="1235" y="3068">TX: task→planned, driver_response_status→failed</text>
+  <path class="arrow" d="M1005 3120 H1930"/>
+  <text class="stepText" x="1235" y="3108">container → scheduled</text>
+  <path class="arrow" d="M1005 3160 H1930"/>
+  <text class="stepText" x="1240" y="3148">If no other active tasks for driver: Users→متاح</text>
+  <path class="arrow" d="M1005 3200 H1930"/>
+  <text class="stepText" x="1245" y="3188">If no other active tasks for machine: Machines→جاهزة</text>
+  <path class="arrow" d="M1005 3240 H1930"/>
+  <text class="stepText" x="1188" y="3228">COMMIT</text>
+  <path class="returnArrow" d="M1930 3280 H710"/>
+  <text class="stepText" x="1235" y="3272">Task returned to mechanic for reassignment</text>
+
+  <rect class="note" x="1415" y="2550" width="545" height="138"/>
+  <text class="noteText" x="1435" y="2582">ملاحظة مهمة:</text>
+  <text class="noteText" x="1435" y="2608">الإكمال عند السائق لا يغلق المهمة نهائيًا.</text>
+  <text class="noteText" x="1435" y="2634">هو فقط يغيّر driver_response_status إلى completed.</text>
+  <text class="noteText" x="1435" y="2660">الإغلاق النهائي يتم عندما يؤكد مدير الرصيف المهمة.</text>
+
+  <rect class="note" x="1360" y="145" width="620" height="84"/>
+  <text class="noteText" x="1380" y="175">المخطط يجمع المسارات الرئيسية من handlers: generate-plan, assign-driver, respond, start, complete, fail</text>
+  <text class="noteText" x="1380" y="201">ويركز على تغيّر status داخل الجداول الأساسية: plans, tasks, containers, vessels, users, machines.</text>
+</svg>

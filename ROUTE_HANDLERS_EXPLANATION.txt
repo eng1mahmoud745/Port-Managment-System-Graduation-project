@@ -1,0 +1,250 @@
+Route Handler Callbacks Explanation
+===================================
+
+GET /api/users
+File: src/routes/adminRoutes.js
+Purpose: Fetches the users list from database with normalized user id field.
+
+POST /api/users
+File: src/routes/adminRoutes.js
+Purpose: Creates a new user after validating uniqueness constraints.
+
+DELETE /api/users/delete-by-email
+File: src/routes/adminRoutes.js
+Purpose: Deletes a user record by email address.
+
+GET /api/suppliers
+File: src/routes/adminRoutes.js
+Purpose: Returns suppliers list with optional filters and search criteria.
+
+POST /api/suppliers
+File: src/routes/adminRoutes.js
+Purpose: Creates a new supplier record after validating required supplier data.
+
+PUT /api/suppliers/:id
+File: src/routes/adminRoutes.js
+Purpose: Updates supplier details by supplier id.
+
+GET /api/suppliers/:id
+File: src/routes/adminRoutes.js
+Purpose: Returns full supplier details by supplier id.
+
+DELETE /api/suppliers/:id
+File: src/routes/adminRoutes.js
+Purpose: Deletes supplier record by id with DB constraint handling.
+
+GET /api/machines
+File: src/routes/adminRoutes.js
+Purpose: Fetches machines list with related operational metadata.
+
+POST /api/machines
+File: src/routes/adminRoutes.js
+Purpose: Creates a new machine entry after validating machine fields.
+
+PUT /api/machines/:id
+File: src/routes/adminRoutes.js
+Purpose: Updates an existing machine entry by id.
+
+DELETE /api/machines/:id
+File: src/routes/adminRoutes.js
+Purpose: Deletes a machine by id with safe error handling.
+
+GET /api/warehouses
+File: src/routes/adminRoutes.js
+Purpose: Fetches warehouses list with filtering/search support.
+
+POST /api/warehouses
+File: src/routes/adminRoutes.js
+Purpose: Creates a warehouse and resolves consistent warehouse code/type values.
+
+PUT /api/warehouses/:id
+File: src/routes/adminRoutes.js
+Purpose: Updates warehouse details by id.
+
+DELETE /api/warehouses/:id
+File: src/routes/adminRoutes.js
+Purpose: Deletes warehouse record by id.
+
+GET /api/locations
+File: src/routes/adminRoutes.js
+Purpose: Fetches storage locations with optional warehouse/status filters.
+
+POST /api/locations
+File: src/routes/adminRoutes.js
+Purpose: Creates a new storage location with uniqueness checks.
+
+PUT /api/locations/:id
+File: src/routes/adminRoutes.js
+Purpose: Updates location details by id.
+
+DELETE /api/locations/:id
+File: src/routes/adminRoutes.js
+Purpose: Deletes location record by id.
+
+GET /api/suppliers/:id/history
+File: src/routes/adminRoutes.js
+Purpose: Returns supplier profile with historical purchases and summary stats.
+
+POST /api/purchases
+File: src/routes/adminRoutes.js
+Purpose: Registers a purchase transaction and updates supplier aggregates.
+
+GET /api/inventory/items
+File: src/routes/adminRoutes.js
+Purpose: Returns inventory items joined with warehouse/location context.
+
+POST /api/inventory/receive
+File: src/routes/adminRoutes.js
+Purpose: Increases item quantity and writes receive transaction log entry.
+
+POST /api/inventory/issue
+File: src/routes/adminRoutes.js
+Purpose: Decreases item quantity and writes issue transaction log entry.
+
+GET /api/inventory/transactions
+File: src/routes/adminRoutes.js
+Purpose: Returns unified inventory transaction history.
+
+POST /api/requests
+File: src/routes/adminRoutes.js
+Purpose: Creates a new inventory request entry.
+
+GET /api/requests
+File: src/routes/adminRoutes.js
+Purpose: Returns inventory requests list with item context.
+
+POST /api/requests/approve/:id
+File: src/routes/adminRoutes.js
+Purpose: Approves request, applies stock movement, and updates request status atomically.
+
+POST /api/suppliers/edit/:id
+File: src/routes/adminRoutes.js
+Purpose: Applies partial supplier edits used by edit workflow.
+
+POST /api/inventory/new
+File: src/routes/adminRoutes.js
+Purpose: Creates a new inventory item and optional initial receive movement.
+
+POST /api/inventory/edit/:id
+File: src/routes/adminRoutes.js
+Purpose: Updates editable inventory item fields including image metadata.
+
+GET /api/inventory/transactions/:id
+File: src/routes/adminRoutes.js
+Purpose: Returns details for a specific inventory transaction.
+
+GET /
+File: src/routes/authRoutes.js
+Purpose: Serves the login page as the default app entry.
+
+GET /login
+File: src/routes/authRoutes.js
+Purpose: Serves the login page explicitly.
+
+GET /driver
+File: src/routes/authRoutes.js
+Purpose: Serves the driver page shell.
+
+POST /api/login
+File: src/routes/authRoutes.js
+Purpose: Authenticates user credentials, creates session state, and redirects by role.
+
+POST /api/logout
+File: src/routes/authRoutes.js
+Purpose: Clears current session and authentication cookie.
+
+GET /api/session-status
+File: src/routes/authRoutes.js
+Purpose: Returns current authentication/session status for the client.
+
+GET /api/dockmanager/reception/vessels
+File: src/routes/dockRoutes.js
+Purpose: Returns incoming vessels with latest discharge plan/task snapshots. Protected route.
+
+POST /api/dockmanager/reception/vessels
+File: src/routes/dockRoutes.js
+Purpose: Creates a new incoming vessel reception record. Protected route.
+
+POST /api/dockmanager/reception/vessels/:vesselId/containers
+File: src/routes/dockRoutes.js
+Purpose: Registers received containers under a specific incoming vessel. Protected route.
+
+GET /api/dockmanager/reception/container-code
+File: src/routes/dockRoutes.js
+Purpose: Generates the next available container code suggestion. Protected route.
+
+GET /api/dockmanager/reception/container-code/check
+File: src/routes/dockRoutes.js
+Purpose: Checks whether a container code is available/valid. Protected route.
+
+POST /api/dockmanager/reception/vessels/:vesselId/arrival-shortage-reason
+File: src/routes/dockRoutes.js
+Purpose: Updates arrival shortage reason for a vessel reception. Protected route.
+
+POST /api/dockmanager/reception/vessels/:vesselId/generate-plan
+File: src/routes/dockRoutes.js
+Purpose: Generates discharge plan and task allocation for a vessel. Protected route.
+
+POST /api/dockmanager/reception/plans/:planId/start
+File: src/routes/dockRoutes.js
+Purpose: Transitions a discharge plan from draft/planned to active execution. Protected route.
+
+POST /api/dockmanager/reception/tasks/:taskId/complete
+File: src/routes/dockRoutes.js
+Purpose: Completes a discharge task and updates container/resulting state. Protected route.
+
+GET /api/mechanic/discharge-tasks
+File: src/routes/dockRoutes.js
+Purpose: Returns mechanic view of discharge tasks requiring machine-side actions. Protected route.
+
+POST /api/mechanic/discharge-tasks/:taskId/assign-driver
+File: src/routes/dockRoutes.js
+Purpose: Assigns or updates driver assignment for a mechanic task. Protected route.
+
+GET /api/dockmanager/dashboard
+File: src/routes/dockRoutes.js
+Purpose: Returns dock manager dashboard aggregates and live operational counters. Protected route.
+
+GET /api/dockmanager/completed-containers
+File: src/routes/dockRoutes.js
+Purpose: Returns completed container operations history. Protected route.
+
+POST /api/dockmanager/containers
+File: src/routes/dockRoutes.js
+Purpose: Creates direct dock container record entry from manager workflow. Protected route.
+
+POST /api/dockmanager/requests
+File: src/routes/dockRoutes.js
+Purpose: Creates dock delivery request for a target slot/container. Protected route.
+
+POST /api/dockmanager/containers/deliver
+File: src/routes/dockRoutes.js
+Purpose: Marks container delivery operation and updates slot/request state. Protected route.
+
+POST /api/driver/dock-requests/:requestId/respond
+File: src/routes/dockRoutes.js
+Purpose: Records driver response to a dock delivery request. Protected route.
+
+POST /api/driver/discharge-tasks/:taskId/respond
+File: src/routes/dockRoutes.js
+Purpose: Records driver response to assigned discharge task. Protected route.
+
+POST /api/driver/discharge-tasks/:taskId/fail
+File: src/routes/dockRoutes.js
+Purpose: Marks discharge task as failed with reason and state updates. Protected route.
+
+POST /api/driver/dock-requests/:requestId/finish
+File: src/routes/dockRoutes.js
+Purpose: Marks dock request as completed by driver confirmation. Protected route.
+
+GET /api/driver-dashboard
+File: src/routes/driverRoutes.js
+Purpose: Builds driver dashboard payload including user, machine, and active tasks context.
+
+GET /api/drivers
+File: src/routes/driverRoutes.js
+Purpose: Returns drivers list with assignment and availability attributes.
+
+PUT /api/drivers/:userId
+File: src/routes/driverRoutes.js
+Purpose: Updates driver profile and synchronizes linked machine details when needed.

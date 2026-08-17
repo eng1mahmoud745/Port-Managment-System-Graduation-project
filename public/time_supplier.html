@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تاريخ المورد - نظام صيانة الأدوات البحرية</title>
+    <link href="stylesheets/time_supplier.css" rel="stylesheet">
+    <link href="stylesheets/theme.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">نظام صيانة الأدوات - المرافئ البحرية السورية</div>
+                <a href="supllier.html" class="back-btn">العودة للقائمة الرئيسية</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <h1 class="page-title">تاريخ المورد</h1>
+        
+        <div class="supplier-summary">
+            <h2 id="supplier-name">اسم المورد سيظهر هنا</h2>
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <div class="summary-value" id="total-transactions">0</div>
+                    <div class="summary-label">إجمالي التعاملات</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-value" id="total-value">0</div>
+                    <div class="summary-label">إجمالي القيمة</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-value" id="last-purchase">-</div>
+                    <div class="summary-label">آخر عملية شراء</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-value" id="avg-transaction">0</div>
+                    <div class="summary-label">متوسط قيمة التعامل</div>
+                </div>
+            </div>
+        </div>
+
+        <h3 class="section-title">التعاملات السنوية</h3>
+        <div class="chart-container">
+            <canvas id="yearlyChart" class="chart"></canvas>
+        </div>
+
+        <h3 class="section-title">تفاصيل التعاملات</h3>
+        <div class="table-container">
+            <table id="transactions-table">
+                <thead>
+                    <tr>
+                        <th>تاريخ التعامل</th>
+                        <th>نوع المنتج</th>
+                        <th>الكمية</th>
+                        <th>سعر الوحدة</th>
+                        <th>القيمة الإجمالية</th>
+                        <th>السنة</th>
+                        <th>ملاحظات</th>
+                    </tr>
+                </thead>
+                <tbody id="transactions-body">
+                    <!-- سيتم ملء هذا القسم بالبيانات من JavaScript -->
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="section-title">المنتجات الأكثر شراءً</h3>
+        <div class="chart-container">
+            <canvas id="productsChart" class="chart"></canvas>
+        </div>
+
+        <div class="actions" style="text-align: center; margin: 2rem 0;">
+            <button id="print-report-btn" type="button" class="btn btn-primary">طباعة التقرير</button>
+        </div>
+    </main>
+
+    <script src="scripts/time_supplier.js"></script>
+</body>
+</html>

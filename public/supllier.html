@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة موردين المرافئ البحرية - سوريا</title>
+    <link rel="stylesheet" href="stylesheets/style.css">
+    <link rel="stylesheet" href="stylesheets/theme.css">
+</head>
+<body>
+
+    <main class="container">
+        <h1 class="page-title">إدارة موردين المرافئ البحرية</h1>
+
+        <!-- رسائل التنبيه -->
+        <div id="alert-message" class="alert" style="display: none;"></div>
+
+        <div class="tabs">
+            <div class="tab active" data-tab="suppliers-list">قائمة الموردين</div>
+            <div class="tab" data-tab="add-supplier">إضافة مورد جديد</div>
+            <div class="tab" data-tab="reports">التقارير والإحصائيات</div>
+        </div>
+
+        <!-- قائمة الموردين -->
+        <div class="tab-content active" id="suppliers-list">
+            <div class="search-filter">
+                <h3>بحث وتصفية الموردين</h3>
+
+                <div class="search-filter-grid">
+                    <div class="form-group">
+                        <label for="search-name">بحث بالاسم أو التخصص</label>
+                        <input type="text" id="search-name" placeholder="أدخل اسم المورد أو التخصص">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="filter-category">التصنيف</label>
+                        <select id="filter-category">
+                            <option value="">جميع التصنيفات</option>
+                            <option value="رئيسي">رئيسي</option>
+                            <option value="ثانوي">ثانوي</option>
+                            <option value="طارئ">طارئ</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="filter-rating">التقييم</label>
+                        <select id="filter-rating">
+                            <option value="">جميع التقييمات</option>
+                            <option value="5">5 نجوم</option>
+                            <option value="4">4 نجوم فأكثر</option>
+                            <option value="3">3 نجوم فأكثر</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="filter-status">حالة النشاط</label>
+                        <select id="filter-status">
+                            <option value="">الكل</option>
+                            <option value="active">نشط</option>
+                            <option value="inactive">غير نشط</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn-primary" id="search-btn">بحث</button>
+                    <button type="button" class="btn btn-warning" id="reset-filters">إعادة تعيين</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="suppliers-table">
+                    <thead>
+                        <tr>
+                            <th>رقم المورد</th>
+                            <th>اسم المورد</th>
+                            <th>التخصص</th>
+                            <th>التصنيف</th>
+                            <th>التقييم</th>
+                            <th>الهاتف</th>
+                            <th>حالة النشاط</th>
+                            <th>الإجراءات</th>
+                        </tr>
+                    </thead>
+                    <tbody id="suppliers-table-body">
+                        <!-- سيتم ملء هذا القسم بالبيانات من JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination">
+                <!-- سيتم إضافة أزرار الترقيم هنا -->
+            </div>
+        </div>
+
+        <!-- إضافة مورد جديد -->
+        <div class="tab-content" id="add-supplier">
+            <form id="supplier-form">
+                <div class="form-section">
+                    <h3>المعلومات الأساسية</h3>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="supplier-name">اسم المورد *</label>
+                            <input type="text" id="supplier-name" name="name" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="supplier-specialization">التخصص *</label>
+                            <select id="supplier-specialization" name="specialization" required>
+                                <option value="">اختر التخصص</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="supplier-category">التصنيف *</label>
+                            <select id="supplier-category" name="category" required>
+                                <option value="">اختر التصنيف</option>
+                                <option value="رئيسي">رئيسي</option>
+                                <option value="ثانوي">ثانوي</option>
+                                <option value="طارئ">طارئ</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="supplier-rating">التقييم الأولي</label>
+                            <select id="supplier-rating" name="rating">
+                                <option value="5">ممتاز (5 نجوم)</option>
+                                <option value="4">جيد جداً (4 نجوم)</option>
+                                <option value="3">جيد (3 نجوم)</option>
+                                <option value="2">متوسط (نجمتان)</option>
+                                <option value="1">ضعيف (نجمة واحدة)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>معلومات الاتصال</h3>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="contact-person">الشخص المسؤول *</label>
+                            <input type="text" id="contact-person" name="contact_person" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="primary-phone">هاتف رئيسي *</label>
+                            <input type="tel" id="primary-phone" name="primary_phone" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="secondary-phone">هاتف احتياطي</label>
+                            <input type="tel" id="secondary-phone" name="secondary_phone">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="email">البريد الإلكتروني</label>
+                            <input type="email" id="email" name="email">
+                        </div>
+
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <label for="address">العنوان الكامل *</label>
+                            <textarea id="address" name="address" rows="3" required></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>المعلومات المالية</h3>
+
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="commercial-reg">رقم السجل التجاري</label>
+                            <input type="text" id="commercial-reg" name="commercial_reg">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="tax-number">الرقم الضريبي</label>
+                            <input type="text" id="tax-number" name="tax_number">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="payment-terms">شروط الدفع</label>
+                            <select id="payment-terms" name="payment_terms">
+                                <option value="صافي 30">صافي 30 يوم</option>
+                                <option value="صافي 60">صافي 60 يوم</option>
+                                <option value="صافي 90">صافي 90 يوم</option>
+                                <option value="دفعة مقدمة">دفعة مقدمة</option>
+                                <option value="آخر">آخر</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="currency">عملة التعامل *</label>
+                            <select id="currency" name="currency" required>
+                                <option value="SYP">ليرة سورية (SYP)</option>
+                                <option value="USD">دولار أمريكي (USD)</option>
+                                <option value="EUR">يورو (EUR)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary">حفظ المورد</button>
+                    <button type="reset" class="btn btn-warning">إعادة تعيين</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- التقارير والإحصائيات -->
+        <div class="tab-content" id="reports">
+            <div class="form-section">
+                <h3>تقارير الموردين</h3>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="report-type">نوع التقرير</label>
+                        <select id="report-type">
+                            <option value="suppliers-by-category">الموردين حسب التصنيف</option>
+                            <option value="suppliers-by-specialization">الموردين حسب التخصص</option>
+                            <option value="top-rated-suppliers">أفضل الموردين تقييماً</option>
+                            <option value="inactive-suppliers">الموردين غير النشطين</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="report-period">الفترة الزمنية</label>
+                        <select id="report-period">
+                            <option value="all-time">جميع الفترات</option>
+                            <option value="last-month">آخر شهر</option>
+                            <option value="last-quarter">آخر ربع سنة</option>
+                            <option value="last-year">آخر سنة</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn-primary" id="generate-report">إنشاء التقرير</button>
+                    <button type="button" class="btn btn-warning" id="export-report">تصدير التقرير</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="report-table">
+                    <thead>
+                        <tr>
+                            <th>اسم المورد</th>
+                            <th>التخصص</th>
+                            <th>التصنيف</th>
+                            <th>التقييم</th>
+                            <th>عدد التعاملات</th>
+                            <th>القيمة الإجمالية</th>
+                        </tr>
+                    </thead>
+                    <tbody id="report-table-body">
+                        <!-- سيتم ملء هذا القسم بالبيانات من JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="report-pagination">
+                <!-- سيتم إضافة أزرار الترقيم هنا -->
+            </div>
+        </div>
+    </main>
+
+    <!-- نافذة تأكيد الحذف -->
+    <div class="modal" id="delete-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">تأكيد الحذف</h3>
+                <button type="button" class="close-modal" aria-label="إغلاق">&times;</button>
+            </div>
+            <p>هل أنت متأكد من رغبتك في حذف هذا المورد؟ لا يمكن التراجع عن هذه العملية.</p>
+            <div class="actions">
+                <button type="button" class="btn btn-danger" id="confirm-delete">حذف</button>
+                <button type="button" class="btn btn-warning" id="cancel-delete">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- نافذة عرض التفاصيل -->
+    <div class="modal" id="details-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title">تفاصيل المورد</h3>
+                <button type="button" class="close-modal" aria-label="إغلاق">&times;</button>
+            </div>
+            <div id="supplier-details">
+                <!-- سيتم ملء هذا القسم بالبيانات من JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script src="scripts/supplier.js"></script>
+</body>
+</html>

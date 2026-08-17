@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول - نظام إدارة الميناء</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="stylesheets/theme.css">
+    <link rel="stylesheet" href="stylesheets/setup.css">
+</head>
+<body>
+    <main class="login-page">
+        <section class="login-shell">
+            <div class="login-hero">
+                <span class="hero-badge">Port Operations Suite</span>
+                <h1>ادارة المرافئ البحرية</h1>
+                <p class="hero-copy">
+                    مساحة موحدة لمتابعة التشغيل اليومي، تنسيق حركة المركبات، وإدارة الفرق والخدمات من مكان واحد.
+                </p>
+
+                <div class="hero-stats" aria-label="مزايا النظام">
+                    <article class="stat-card">
+                        <strong>تشغيل منظم</strong>
+                        <span>متابعة الأدوار والمهام لحظيًا</span>
+                    </article>
+                    <article class="stat-card">
+                        <strong>وصول أسرع</strong>
+                        <span>واجهة دخول واضحة ومباشرة لجميع المستخدمين</span>
+                    </article>
+                    <article class="stat-card">
+                        <strong>رؤية أفضل</strong>
+                        <span>لوحات عمل موحدة للأقسام والعمليات</span>
+                    </article>
+                </div>
+
+                <div class="hero-visual hero-logo-visual">
+                    <img class="hero-logo-image" src="images/login-hero-brand.png" alt="شعار نظام إدارة الموانئ البحرية">
+                    <div class="visual-caption">
+                        <span>جاهزية تشغيلية</span>
+                        <strong>دخول آمن وسريع إلى النظام</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="login-panel">
+                <div class="panel-header">
+                    <span class="panel-kicker">أهلًا بعودتك</span>
+                    <h2 class="title">سجل دخولك للمتابعة</h2>
+                    <p class="subtitle">أدخل بياناتك للوصول إلى لوحة التحكم الخاصة بك داخل النظام.</p>
+                </div>
+
+                <div id="error-message-box" role="alert" aria-live="polite"></div>
+
+                <form action="/api/login" method="POST" class="login-form">
+                    <div class="input-group">
+                        <label for="email">البريد الإلكتروني</label>
+                        <input type="email" id="email" name="email" required placeholder="name@company.com" autocomplete="username">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="password">كلمة المرور</label>
+                        <input type="password" id="password" name="password" required placeholder="أدخل كلمة المرور" autocomplete="current-password">
+                    </div>
+
+                    <button type="submit" class="login-button">دخول إلى النظام</button>
+                </form>
+
+                <p class="panel-footnote">إذا واجهت مشكلة في الدخول، راجع مسؤول النظام أو تحقق من صحة البريد وكلمة المرور.</p>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const errorMessageDiv = document.getElementById('error-message-box');
+            const errorParam = params.get('error');
+
+            let message = '';
+
+            if (errorParam === 'InvalidCredentials') {
+                message = 'خطأ: البريد الإلكتروني أو كلمة المرور غير صحيحة. حاول مرة أخرى.';
+            } else if (errorParam === 'DatabaseError') {
+                message = 'حدث خطأ أثناء الاتصال بقاعدة البيانات. يرجى مراجعة المسؤول.';
+            }
+
+            if (message && errorMessageDiv) {
+                errorMessageDiv.textContent = message;
+                errorMessageDiv.style.display = 'block';
+            }
+
+            if (errorParam) {
+                params.delete('error');
+                const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                window.history.replaceState({}, document.title, newUrl);
+            }
+        });
+    </script>
+</body>
+</html>

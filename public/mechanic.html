@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>نظام إدارة الآليات الثقيلة</title>
+  <link rel="stylesheet" href="stylesheets/vihicles.css">
+  <link rel="stylesheet" href="stylesheets/theme.css">
+  <link rel="stylesheet" href="stylesheets/mechanic.css">
+</head>
+<body class="mechanic-body">
+  <div class="container mechanic-page">
+    <header class="hero-header">
+      <div class="hero-copy">
+        <h1>لوحة مدير الآليات</h1>
+        <div class="small-muted hero-text">
+          متابعة مهام التفريغ والجاهزية والصيانة من شاشة واحدة بشكل مرتب وواضح.
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button type="button" class="btn ghost" data-open-search="true">بحث</button>
+        <button type="button" class="btn ghost" id="toggleMachinesBtn" aria-expanded="false">عرض الآليات</button>
+        <button type="button" class="btn ghost" id="refreshDashboardBtn">تحديث</button>
+        <button id="open-driver-page-btn" type="button" class="btn ghost">السائقون</button>
+      </div>
+    </header>
+
+    <section class="summary-strip">
+      <div class="summary-card">
+        <span class="small-muted">مهام التفريغ</span>
+        <strong id="countDischargeTasks">0</strong>
+      </div>
+      <div class="summary-card summary-card-note">
+        <span class="small-muted">أولوية العمل</span>
+        <strong>اختيار السائق ثم إرسال المهمة</strong>
+      </div>
+      <div class="summary-card summary-card-action">
+        <button type="button" class="btn ghost" id="refreshDischargeBtn">تحديث مهام التفريغ</button>
+      </div>
+    </section>
+
+    <section class="panel discharge-panel">
+      <div class="section-heading">
+        <div>
+          <h3>مهام تفريغ البواخر</h3>
+          <div class="small-muted section-copy">
+            كل مهمة تحتاج اختيار سائق مناسب قبل إرسالها للتنفيذ.
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الباخرة</th>
+              <th>الحاوية</th>
+              <th>الوجهة</th>
+              <th>الرصيف</th>
+              <th>المعدة</th>
+              <th>السائق الحالي</th>
+              <th>اختيار السائق</th>
+              <th>الحالة</th>
+              <th>إجراء</th>
+            </tr>
+          </thead>
+          <tbody id="dischargeTasksBody">
+            <tr>
+              <td colspan="9" style="text-align:center;">جارٍ تحميل مهام التفريغ...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <h3>الإشعارات</h3>
+          <div class="small-muted section-copy">
+            طلبات الصيانة الواردة من السائقين بانتظار قرار مدير الآليات.
+          </div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>رقم الطلب</th>
+              <th>السائق</th>
+              <th>المادة</th>
+              <th>الكمية</th>
+              <th>السبب</th>
+              <th>تاريخ التقديم</th>
+              <th>الإجراء</th>
+            </tr>
+          </thead>
+          <tbody id="maintenanceRequestsBody">
+            <tr>
+              <td colspan="7" style="text-align:center;">جارٍ تحميل إشعارات الصيانة...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="grid overview-grid">
+      <div class="panel">
+        <div class="section-heading">
+          <div>
+            <h3>تنبيهات الصيانة</h3>
+          </div>
+        </div>
+        <div class="alerts compact-alerts" id="alertsContainer"></div>
+      </div>
+
+      <div class="panel stats-panel">
+        <div class="section-heading">
+          <div>
+            <h3>الإحصاءات السريعة</h3>
+          </div>
+        </div>
+
+        <div class="stats-shell">
+          <canvas id="availabilityChart" height="180"></canvas>
+          <div class="stats-columns">
+            <div>
+              <div class="small-muted">حسب الحالة</div>
+              <div id="byStatusList" class="stats-list"></div>
+            </div>
+            <div>
+              <div class="small-muted">أهم مواد المخزون</div>
+              <div id="topMaterials" class="inventory-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <h3>ملخص الآليات حسب الفئة</h3>
+        </div>
+      </div>
+      <div class="cards compact-cards" id="cardsContainer"></div>
+    </section>
+
+    <section class="panel machines-panel" id="machinesPanel">
+      <div class="section-heading">
+        <div>
+          <h3>الآليات</h3>
+          <div class="small-muted section-copy">الجدول يظهر نتائج البحث والتصفية الحالية.</div>
+        </div>
+
+        <div class="section-actions">
+          <div class="summary-card mini-count">
+            <span class="small-muted">عدد الآليات</span>
+            <strong id="countMachines">0</strong>
+          </div>
+          <button type="button" class="btn ghost" data-open-search="true">بحث وتصفية</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="machinesTable">
+          <thead>
+            <tr>
+              <th>الكود</th>
+              <th>الاسم</th>
+              <th>الفئة</th>
+              <th>الموقع</th>
+              <th>الحالة</th>
+              <th>آخر صيانة</th>
+              <th>الصيانة القادمة</th>
+              <th>الساعات</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="searchPanelDock" class="search-panel-dock" hidden>
+      <div id="searchPanelContent" class="search-sheet">
+        <div class="section-heading search-sheet-heading">
+          <div>
+            <h3>البحث والتصفية</h3>
+            <div class="small-muted section-copy">اختر المعايير ثم اعرض النتائج في جدول الآليات.</div>
+          </div>
+        </div>
+
+        <div class="search-grid">
+          <div class="form-row">
+            <label for="searchInput">الاسم أو الكود</label>
+            <input id="searchInput" type="search" placeholder="ابحث باسم الآلية أو الكود..." />
+          </div>
+
+          <div class="form-row">
+            <label for="filterCategory">الفئة</label>
+            <select id="filterCategory">
+              <option value="">كل الفئات</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label for="filterStatus">الحالة</label>
+            <select id="filterStatus">
+              <option value="">كل الحالات</option>
+              <option value="جاهزة">جاهزة</option>
+              <option value="تحت الصيانة">تحت الصيانة</option>
+              <option value="متوقفة">متوقفة</option>
+              <option value="في الخدمة">في الخدمة</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label for="sortSelect">الترتيب</label>
+            <select id="sortSelect">
+              <option value="machine_name:asc">الاسم تصاعدياً</option>
+              <option value="machine_name:desc">الاسم تنازلياً</option>
+              <option value="next_maintenance_date:asc">أقرب صيانة أولاً</option>
+              <option value="next_maintenance_date:desc">أبعد صيانة أولاً</option>
+              <option value="operating_hours:desc">ساعات التشغيل الأعلى</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-actions search-sheet-actions">
+          <button type="button" class="btn ghost" id="resetSearchBtn">تصفير</button>
+          <button type="button" class="btn" id="applySearchBtn">تطبيق</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-bg" id="modalBg">
+      <div class="modal" role="dialog" aria-modal="true">
+        <button id="closeModal" class="modal-close-btn" type="button">✕</button>
+        <div id="modalContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts/mechanic.js"></script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ar">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>لوحة تحكم إدارة المستودعات — نهائي</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap" rel="stylesheet">
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="stylesheets/warehouse.css">  
+<link rel="stylesheet" href="stylesheets/theme.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="row">
+      <div class="logo">م</div>
+      <div>
+        <div style="font-weight:800">إدارة المستودعات</div>
+        <div class="muted">نظام عرض تفاعلي (محلي)</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="#" class="nav-link active" data-view="dashboard">لوحة القيادة</a>
+      <a href="#" class="nav-link" data-view="warehouses">المستودعات</a>
+      <a href="#" class="nav-link" data-view="locations">المواقع</a>
+      <a href="#" class="nav-link" data-view="reports">تقارير & طباعة</a>
+    </nav>
+
+    
+  </aside>
+
+  <main>
+    <header class="top">
+      <div class="row" style="align-items:center;gap:12px">
+        <div class="breadcrumb" id="breadcrumb">لوحة القيادة</div>
+      </div>
+
+      <div class="controls">
+        <div class="search card">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 21l-4.35-4.35" stroke="#0ea5a4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <input id="globalSearch" placeholder="ابحث عن مستودع أو موقع..." />
+        </div>
+        <button class="btn" id="btnAddWarehouse">إضافة مستودع</button>
+      </div>
+    </header>
+
+    <section class="grid">
+      <div>
+        <!-- Dashboard -->
+        <div id="view-dashboard" class="card view">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div>
+              <h3>لوحة الإحصاءات</h3>
+              <div class="muted">لمحة سريعة عن المستودعات والمواقع</div>
+            </div>
+            <div class="row" style="gap:14px">
+              <div class="pill" id="statWh">0 مستودع</div>
+              <div class="pill" id="statLoc">0 موقع</div>
+            </div>
+          </div>
+
+          <div style="margin-top:16px" class="stat-row">
+            <div class="stat">
+              <div class="muted">المستودعات النشطة</div><div id="statActive" style="font-weight:800;font-size:20px">0</div>
+            </div>
+            <div class="stat">
+              <div class="muted">المواقع المشغولة</div><div id="statOccupied" style="font-weight:800;font-size:20px">0</div>
+            </div>
+            <div class="stat">
+              <div class="muted">المواقع الحرة</div><div id="statFree" style="font-weight:800;font-size:20px">0</div>
+            </div>
+          </div>
+
+          <div style="margin-top:18px;display:flex;gap:12px;flex-wrap:wrap">
+            <div class="card" style="flex:1;min-width:280px">
+              <h3>توزيع حالة المستودعات</h3>
+              <canvas id="chartWarehouse" height="160"></canvas>
+            </div>
+            <div class="card" style="flex:1;min-width:280px">
+              <h3>توزيع حالة المواقع</h3>
+              <canvas id="chartLocations" height="160"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Warehouses -->
+        <div id="view-warehouses" class="card view" style="display:none">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div>
+              <h3>المستودعات</h3>
+              <div class="muted">قائمة وإدارة المستودعات</div>
+            </div>
+            <div class="row">
+              <button class="btn" id="openAddWh">مستودع جديد</button>
+            </div>
+          </div>
+
+          <div style="margin-top:12px" class="card">
+            <div class="filters">
+              <input id="filterWhSearch" type="text" placeholder="بحث بالاسم أو الرمز أو الموقع" />
+              <select id="filterWhStatus">
+                <option value="">كل الحالات</option>
+                <option>نشط</option><option>تحت الصيانة</option><option>مغلق</option>
+              </select>
+              <button class="btn ghost" id="clearWhFilters">مسح الفلاتر</button>
+            </div>
+
+            <div style="overflow:auto">
+              <table>
+                <thead><tr><th>رمز</th><th>الاسم</th><th>النوع</th><th>الموقع</th><th>المشرف</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+                <tbody id="tbWarehouses"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Locations -->
+        <div id="view-locations" class="card view" style="display:none">
+          <div class="row" style="justify-content:space-between;align-items:center">
+            <div>
+              <h3>المواقع</h3>
+              <div class="muted">إدارة المواقع داخل المستودعات</div>
+            </div>
+            <div class="row">
+              <button class="btn" id="openAddLoc">موقع جديد</button>
+            </div>
+          </div>
+
+          <div style="margin-top:12px" class="card">
+            <div class="filters">
+              <select id="filterLocWarehouse"><option value="">كل المستودعات</option></select>
+              <select id="filterLocStatus"><option value="">كل الحالات</option><option>حر</option><option>مشغول</option><option>محجوز</option></select>
+              <input id="filterLocSearch" type="text" placeholder="بحث برمز الموقع أو الرف" />
+              <button class="btn ghost" id="clearLocFilters">مسح الفلاتر</button>
+            </div>
+
+            <div id="locationsOverview" class="locations-overview"></div>
+
+            <div style="margin-top:8px;overflow:auto">
+              <table>
+                <thead><tr><th>رمز الموقع</th><th>المستودع</th><th>الرف</th><th>الممر</th><th>المستوى</th><th>السعة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+                <tbody id="tbLocations"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reports & Print -->
+        <div id="view-reports" class="card view" style="display:none">
+          <h3>تقارير & طباعة</h3>
+          <div class="muted">طباعة تقرير شامل يتضمن المستودعات، المواقع، والملخص الإحصائي</div>
+          <div style="margin-top:14px;display:flex;gap:8px">
+            <button class="btn" id="btnPrintAll">طباعة التقرير الكامل</button>
+            <button class="btn ghost" id="btnExportJSON">تصدير JSON</button>
+            <button class="btn ghost" id="btnImportJSON">استيراد JSON</button>
+            <input type="file" id="importFile" accept="application/json" style="display:none" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Right column -->
+      <aside>
+        <div class="card">
+          <h3>إجراءات سريعة</h3>
+          <div style="margin-top:10px;display:flex;flex-direction:column;gap:10px">
+            <button class="btn" id="quickAddWh">+ مستودع</button>
+            <button class="btn ghost" id="quickAddLoc">+ موقع</button>
+            <button class="btn ghost" id="openReports">عرض تقرير</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <h3>ملاحظات</h3>
+          <ul class="muted" style="line-height:1.7;margin-top:8px">
+            <li>يتم عرض بيانات المستودعات والمواقع مباشرة من الخادم.</li>
+            <li>يعرض قسم المواقع ملخصًا مرتبًا يوضح المواد الموجودة داخل كل موقع.</li>
+            <li>اضغط على اسم المستودع لفتح عرض منظم لمواقع المستودع ومحتوياتها.</li>
+          </ul>
+        </div>
+      </aside>
+    </section>
+  </main>
+</div>
+
+<!-- Modal -->
+<div class="modal-back" id="modalBack">
+  <div class="modal" role="dialog" aria-modal="true">
+    <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div id="modalTitle" style="font-weight:800"></div>
+      <button id="closeModal" class="btn ghost">إغلاق</button>
+    </header>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script src="scripts/warehouse.js"></script>
+</body>
+</html>

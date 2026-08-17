@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>نظام إدارة الآليات الثقيلة — واجهة تجريبية</title>
+  <link rel="stylesheet" href="stylesheets/vihicles.css">
+  <link rel="stylesheet" href="stylesheets/theme.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>نظام إدارة الآليات الثقيلة — واجهة تجريبية</h1>
+        <div class="small-muted">عرض تجريبي للوظائف: إدارة آلات، صيانة، مخزون، وتنبيهات</div>
+      </div>
+      <div class="top-actions">
+        <button id="open-driver-page-btn" type="button" class="btn">السائقين</button>
+      </div>
+    </header>
+
+    <div class="alerts" id="alertsContainer"></div>
+
+    <div class="cards" id="cardsContainer">
+      <!-- cards by category -->
+    </div>
+
+    <div class="grid">
+      <div class="panel">
+        <div class="table-controls">
+          <input id="searchInput" type="search" placeholder="ابحث باسم الآلية أو الكود..." />
+          <select id="filterCategory"><option value="">كل الفئات</option></select>
+          <select id="filterStatus"><option value="">كل الحالات</option>
+            <option value="جاهزة">جاهزة</option>
+            <option value="تحت الصيانة">تحت الصيانة</option>
+            <option value="متوقفة">متوقفة</option>
+            <option value="في الخدمة">في الخدمة</option>
+          </select>
+          <select id="sortSelect"><option value="machine_name:asc">الترتيب: الاسم ⬆</option>
+            <option value="machine_name:desc">الترتيب: الاسم ⬇</option>
+            <option value="next_maintenance_date:asc">أقرب صيانة ⬆</option>
+            <option value="next_maintenance_date:desc">أبعد صيانة ⬇</option>
+            <option value="operating_hours:desc">ساعات تشغيل ⬇</option>
+          </select>
+          <div style="margin-left:auto" class="small-muted">عدد الآليات: <span id="countMachines">0</span></div>
+        </div>
+
+        <table id="machinesTable">
+          <thead>
+            <tr><th>الكود</th><th>الاسم</th><th>الفئة</th><th>الموقع</th><th>حالة التشغيل</th><th>آخر صيانة</th><th>الصيانة القادمة</th><th>ساعات</th><th>إجراءات</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>لوحة الإحصاءات السريعة</h3>
+        <div style="display:flex;gap:8px;flex-direction:column">
+          <div class="small-muted">نسبة الجاهزية</div>
+          <canvas id="availabilityChart" height="180" style="background:linear-gradient(180deg,#fff, #fafafa);border-radius:8px"></canvas>
+          <div style="display:flex;gap:8px;align-items:center;justify-content:space-between">
+            <div>
+              <div class="small-muted">معدات حسب الحالة</div>
+              <div id="byStatusList"></div>
+            </div>
+            <div>
+              <div class="small-muted">المخزون (أهم 5)</div>
+              <div id="topMaterials" class="inventory-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal (add/edit machine & maintenance) -->
+    <div class="modal-bg" id="modalBg">
+      <div class="modal" role="dialog" aria-modal="true">
+        <button id="closeModal" class="modal-close-btn" type="button">✖</button>
+        <div id="modalContent"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="scripts/vehicles2.js"></script>
+</body>
+</html>

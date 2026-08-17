@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>نظام إدارة الآليات الثقيلة</title>
+  <link rel="stylesheet" href="stylesheets/vihicles.css">
+  <link rel="stylesheet" href="stylesheets/theme.css">
+</head>
+<body>
+  <div class="container vehicles-dashboard">
+    <header class="hero-header">
+      <div class="hero-copy">
+        <div class="hero-eyebrow">لوحة تشغيل مركزية</div>
+        <h1>نظام إدارة الآليات الثقيلة</h1>
+        <div class="small-muted hero-text">واجهة مبسطة لمتابعة الآليات، مراقبة الجاهزية، والبحث السريع عن بيانات التشغيل من مكان واحد.</div>
+      </div>
+
+      <div class="top-actions">
+        <button id="addMachineBtn" type="button">+ إضافة آلية</button>
+      </div>
+    </header>
+
+    <section class="panel stats-panel stats-panel--top">
+      <div class="section-heading">
+        <div>
+          <h3>لوحة الإحصاءات السريعة</h3>
+          <div class="small-muted section-copy">ملخص بصري سريع يوضح عدد الآليات، مستوى الجاهزية الحالي، وتوزيع حالات التشغيل.</div>
+        </div>
+      </div>
+
+      <div class="stats-shell">
+        <div class="stats-kpis">
+          <div class="stats-kpi">
+            <span class="stats-kpi-label">إجمالي الآليات</span>
+            <strong id="statsTotalMachines">0</strong>
+          </div>
+          <div class="stats-kpi">
+            <span class="stats-kpi-label">الجاهزة</span>
+            <strong id="statsReadyMachines">0</strong>
+          </div>
+          <div class="stats-kpi">
+            <span class="stats-kpi-label">تحت الصيانة</span>
+            <strong id="statsMaintenanceMachines">0</strong>
+          </div>
+          <div class="stats-kpi">
+            <span class="stats-kpi-label">المتوقفة</span>
+            <strong id="statsStoppedMachines">0</strong>
+          </div>
+        </div>
+
+        <div class="helper-item chart-card">
+          <div class="chart-card-head">
+            <div>
+              <div class="small-muted">نسبة الجاهزية</div>
+              <div class="chart-card-title" id="availabilitySummary">0% جاهزية</div>
+            </div>
+            <div class="chart-card-badge" id="availabilityBreakdown">0 جاهزة من أصل 0</div>
+          </div>
+          <canvas id="availabilityChart" height="180"></canvas>
+        </div>
+
+        <div class="stats-columns stats-columns--single">
+          <div class="helper-item">
+            <div class="small-muted">معدات حسب الحالة</div>
+            <div id="byStatusList" class="stats-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel machines-panel">
+      <div class="section-heading">
+        <div>
+          <h3>قائمة الآليات</h3>
+          <div class="small-muted section-copy">ابحث وصفّ البيانات لمراجعة حالة التشغيل وساعات العمل بسرعة ووضوح.</div>
+        </div>
+
+        <div class="metric-badge mini-count">
+          <span class="small-muted">عدد الآليات</span>
+          <strong id="countMachines">0</strong>
+        </div>
+      </div>
+
+      <div class="table-controls search-grid">
+        <input id="searchInput" type="search" placeholder="ابحث باسم الآلية أو الكود..." />
+        <select id="filterCategory">
+          <option value="">كل الفئات</option>
+        </select>
+        <select id="filterStatus">
+          <option value="">كل الحالات</option>
+          <option value="جاهزة">جاهزة</option>
+          <option value="تحت الصيانة">تحت الصيانة</option>
+          <option value="متوقفة">متوقفة</option>
+          <option value="في الخدمة">في الخدمة</option>
+        </select>
+        <select id="sortSelect">
+          <option value="machine_name:asc">الترتيب: الاسم &#8593;</option>
+          <option value="machine_name:desc">الترتيب: الاسم &#8595;</option>
+          <option value="operating_hours:desc">ساعات التشغيل &#8595;</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table id="machinesTable">
+          <thead>
+            <tr>
+              <th>الكود</th>
+              <th>الاسم</th>
+              <th>الفئة</th>
+              <th>السائق</th>
+              <th>حالة التشغيل</th>
+              <th>ساعات</th>
+              <th>إجراءات</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="modal-bg" id="modalBg">
+      <div class="modal" role="dialog" aria-modal="true">
+        <button id="closeModal" class="modal-close-btn" type="button">&times;</button>
+        <div id="modalContent"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="scripts/vehicles.js"></script>
+</body>
+</html>

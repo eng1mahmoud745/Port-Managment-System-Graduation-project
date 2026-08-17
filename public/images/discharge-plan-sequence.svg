@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1850" viewBox="0 0 1600 1850" role="img" aria-labelledby="title desc">
+  <title id="title">Sequence Diagram - Generate Discharge Plan</title>
+  <desc id="desc">A sequence diagram showing how the system generates a vessel discharge plan from request to commit.</desc>
+  <defs>
+    <style>
+      .bg { fill: #071a24; }
+      .panel { fill: #0d2533; stroke: #1f4d63; stroke-width: 2; rx: 20; }
+      .lane { stroke: #3b7087; stroke-width: 2; stroke-dasharray: 8 10; opacity: 0.7; }
+      .title { fill: #f4fbff; font-family: Tahoma, Arial, sans-serif; font-size: 32px; font-weight: 700; }
+      .subtitle { fill: #9fc0cf; font-family: Tahoma, Arial, sans-serif; font-size: 18px; }
+      .actor { fill: #133547; stroke: #2ab6c7; stroke-width: 2; rx: 16; }
+      .actor-text { fill: #f4fbff; font-family: Tahoma, Arial, sans-serif; font-size: 18px; font-weight: 700; text-anchor: middle; }
+      .step { fill: #102d3d; stroke: #3d6e86; stroke-width: 1.5; rx: 14; }
+      .step-alt { fill: #123848; stroke: #39c6b1; stroke-width: 1.5; rx: 14; }
+      .step-text { fill: #eff8fc; font-family: Tahoma, Arial, sans-serif; font-size: 15px; }
+      .label { fill: #87a8b8; font-family: Tahoma, Arial, sans-serif; font-size: 14px; text-anchor: middle; }
+      .arrow { stroke: #86e2ef; stroke-width: 3; fill: none; marker-end: url(#arrowHead); }
+      .return { stroke: #f2c66d; stroke-width: 2.5; fill: none; marker-end: url(#returnHead); stroke-dasharray: 8 8; }
+      .note { fill: #0b3140; stroke: #28bfa7; stroke-width: 1.5; rx: 14; }
+      .note-text { fill: #d8fff8; font-family: Tahoma, Arial, sans-serif; font-size: 14px; }
+      .group { fill: none; stroke: #f2c66d; stroke-width: 2; stroke-dasharray: 10 8; rx: 22; }
+      .group-label { fill: #f2c66d; font-family: Tahoma, Arial, sans-serif; font-size: 16px; font-weight: 700; }
+    </style>
+    <marker id="arrowHead" markerWidth="14" markerHeight="10" refX="11" refY="5" orient="auto">
+      <polygon points="0,0 14,5 0,10" fill="#86e2ef" />
+    </marker>
+    <marker id="returnHead" markerWidth="14" markerHeight="10" refX="11" refY="5" orient="auto">
+      <polygon points="0,0 14,5 0,10" fill="#f2c66d" />
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1600" height="1850" />
+  <rect class="panel" x="30" y="30" width="1540" height="1790" />
+
+  <text class="title" x="800" y="80" text-anchor="middle">Generate Discharge Plan - Sequence Diagram</text>
+  <text class="subtitle" x="800" y="112" text-anchor="middle">مخطط تسلسلي يشرح توليد خطة تفريغ الباخرة من الطلب حتى حفظ الخطة والمهام</text>
+
+  <rect class="actor" x="70" y="145" width="220" height="70" />
+  <rect class="actor" x="360" y="145" width="220" height="70" />
+  <rect class="actor" x="650" y="145" width="220" height="70" />
+  <rect class="actor" x="940" y="145" width="220" height="70" />
+  <rect class="actor" x="1230" y="145" width="220" height="70" />
+
+  <text class="actor-text" x="180" y="175">Dock Manager UI</text>
+  <text class="label" x="180" y="198">واجهة مدير الرصيف</text>
+
+  <text class="actor-text" x="470" y="175">Discharge API</text>
+  <text class="label" x="470" y="198">generateDischargePlanHandler</text>
+
+  <text class="actor-text" x="760" y="175">Database</text>
+  <text class="label" x="760" y="198">MySQL Tables</text>
+
+  <text class="actor-text" x="1050" y="175">Dependencies Service</text>
+  <text class="label" x="1050" y="198">Machines / Auto Destination</text>
+
+  <text class="actor-text" x="1340" y="175">Dock Utils</text>
+  <text class="label" x="1340" y="198">Priority / Destination Rank</text>
+
+  <line class="lane" x1="180" y1="230" x2="180" y2="1760" />
+  <line class="lane" x1="470" y1="230" x2="470" y2="1760" />
+  <line class="lane" x1="760" y1="230" x2="760" y2="1760" />
+  <line class="lane" x1="1050" y1="230" x2="1050" y2="1760" />
+  <line class="lane" x1="1340" y1="230" x2="1340" y2="1760" />
+
+  <rect class="group" x="80" y="260" width="1370" height="230" />
+  <text class="group-label" x="105" y="286">Validation Phase</text>
+
+  <path class="arrow" d="M180 320 H470" />
+  <text class="step-text" x="280" y="308">POST /dockmanager/reception/vessels/:vesselId/generate-plan</text>
+
+  <path class="arrow" d="M470 360 H760" />
+  <text class="step-text" x="555" y="348">Load vessel + expected/received container counts</text>
+  <path class="return" d="M760 400 H470" />
+  <text class="step-text" x="565" y="392">vessel data</text>
+
+  <rect class="step" x="390" y="420" width="160" height="46" />
+  <text class="step-text" x="415" y="448">Check vessel status</text>
+  <rect class="step" x="390" y="470" width="190" height="46" />
+  <text class="step-text" x="413" y="498">Check discrepancy reason</text>
+
+  <rect class="group" x="80" y="530" width="1370" height="310" />
+  <text class="group-label" x="105" y="556">Load Planning Inputs</text>
+
+  <path class="arrow" d="M470 600 H760" />
+  <text class="step-text" x="575" y="588">Load arrived / scheduled containers</text>
+  <path class="return" d="M760 640 H470" />
+  <text class="step-text" x="610" y="632">container list</text>
+
+  <path class="arrow" d="M470 690 H1050" />
+  <text class="step-text" x="680" y="678">getReadyMachines(ignoreDraftVesselId)</text>
+  <path class="arrow" d="M1050 730 H760" />
+  <text class="step-text" x="885" y="718">Query ready machines not used by other plans</text>
+  <path class="return" d="M760 770 H1050" />
+  <text class="step-text" x="905" y="762">machines[]</text>
+  <path class="return" d="M1050 810 H470" />
+  <text class="step-text" x="760" y="802">available machines</text>
+
+  <rect class="group" x="80" y="880" width="1370" height="320" />
+  <text class="group-label" x="105" y="906">Auto Destination Resolution</text>
+
+  <path class="arrow" d="M470 960 H1050" />
+  <text class="step-text" x="640" y="948">reassignAutoContainerDestinations(containers)</text>
+  <path class="arrow" d="M1050 1000 H760" />
+  <text class="step-text" x="883" y="988">Read current berth loads / slot occupancy</text>
+  <path class="return" d="M760 1040 H1050" />
+  <text class="step-text" x="900" y="1032">berth loads</text>
+
+  <path class="arrow" d="M1050 1080 H1340" />
+  <text class="step-text" x="1140" y="1068">Rank best berth for auto containers</text>
+  <path class="return" d="M1340 1120 H1050" />
+  <text class="step-text" x="1170" y="1112">resolved destinationType</text>
+  <path class="return" d="M1050 1160 H470" />
+  <text class="step-text" x="730" y="1152">resolvedContainers[]</text>
+
+  <rect class="group" x="80" y="1230" width="1370" height="240" />
+  <text class="group-label" x="105" y="1256">Sorting + Task Construction</text>
+
+  <path class="arrow" d="M470 1310 H1340" />
+  <text class="step-text" x="795" y="1298">Sort by dischargePriority, destinationType, containerNumber</text>
+  <path class="return" d="M1340 1350 H470" />
+  <text class="step-text" x="790" y="1342">sorted container order</text>
+
+  <rect class="step-alt" x="360" y="1380" width="220" height="62" />
+  <text class="step-text" x="390" y="1408">Build taskRows[]</text>
+  <text class="step-text" x="390" y="1428">Round-robin machine assignment</text>
+
+  <rect class="group" x="80" y="1500" width="1370" height="250" />
+  <text class="group-label" x="105" y="1526">Transaction / Persistence</text>
+
+  <path class="arrow" d="M470 1570 H760" />
+  <text class="step-text" x="565" y="1558">BEGIN TRANSACTION</text>
+
+  <path class="arrow" d="M470 1610 H760" />
+  <text class="step-text" x="535" y="1598">Persist updated auto destinations</text>
+  <path class="arrow" d="M470 1650 H760" />
+  <text class="step-text" x="515" y="1638">Cancel previous draft tasks + draft plans</text>
+  <path class="arrow" d="M470 1690 H760" />
+  <text class="step-text" x="555" y="1678">Insert discharge plan (status = draft)</text>
+  <path class="arrow" d="M470 1730 H760" />
+  <text class="step-text" x="545" y="1718">Insert discharge tasks (status = planned)</text>
+  <path class="arrow" d="M470 1770 H760" />
+  <text class="step-text" x="515" y="1758">Update containers =&gt; scheduled, vessel =&gt; discharge_planned</text>
+  <path class="arrow" d="M470 1810 H760" />
+  <text class="step-text" x="580" y="1798">COMMIT</text>
+  <path class="return" d="M760 1810 H470" />
+  <text class="step-text" x="585" y="1836">201 Created - plan generated successfully</text>
+  <path class="return" d="M470 1810 H180" />
+  <text class="step-text" x="220" y="1798">Success response to UI</text>
+
+  <rect class="note" x="1110" y="300" width="300" height="110" />
+  <text class="note-text" x="1130" y="332">ملاحظة:</text>
+  <text class="note-text" x="1130" y="358">مرحلة Generate Plan لا تبدأ التنفيذ الفعلي.</text>
+  <text class="note-text" x="1130" y="384">هي فقط تنشئ Plan = draft</text>
+  <text class="note-text" x="1130" y="408">و Tasks = planned.</text>
+
+  <rect class="note" x="1095" y="1538" width="320" height="152" />
+  <text class="note-text" x="1115" y="1570">بعد هذه المرحلة تأتي خطوات مستقلة:</text>
+  <text class="note-text" x="1115" y="1598">1. الميكانيكي يعيّن السائقين.</text>
+  <text class="note-text" x="1115" y="1626">2. السائقون يوافقون على المهام.</text>
+  <text class="note-text" x="1115" y="1654">3. بعدها فقط يتم Start Plan</text>
+  <text class="note-text" x="1115" y="1682">وتتحول الخطة إلى active.</text>
+</svg>

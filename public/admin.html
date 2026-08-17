@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>لوحة تحكم المدير</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="stylesheets/admin.css">
+
+    <style>
+        .main {
+            margin-right: 240px;
+            padding: 20px;
+            min-height: 100vh;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #content-iframe {
+            width: 100%;
+            flex-grow: 1;
+            border: none;
+            background-color: #0f172a;
+            margin-top: 20px;
+        }
+
+        .tab-content {
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+    <link rel="stylesheet" href="stylesheets/theme.css">
+</head>
+
+<body>
+    <div class="sidebar">
+        <h2>لوحة المدير</h2>
+
+        <button type="button" class="tab-btn active" data-target="dashboard">الرئيسية</button>
+        <button type="button" class="tab-btn" data-target="users">المستخدمون</button>
+        <button type="button" class="tab-btn requests-tab-btn" data-target="dock-release-requests">
+            الطلبات
+            <span id="dock-release-requests-badge" class="tab-badge hidden">0</span>
+        </button>
+
+        <button type="button" class="tab-btn" data-target="warehouses" data-url="/warehouse.html">المستودعات</button>
+        <button type="button" class="tab-btn" data-target="vehicles" data-url="/vehicles.html">الآليات</button>
+        <button type="button" class="tab-btn" data-target="suppliers" data-url="/supllier.html">الموردون</button>
+        <button id="logout-admin-btn" class="sidebar-logout-btn" type="button">تسجيل الخروج</button>
+    </div>
+
+    <div class="main">
+        <div id="dashboard" class="card tab-content">
+            <div class="dashboard-header">
+                <div>
+                    <h3>المؤشرات العامة</h3>
+                    <p class="dashboard-subtitle">لوحة سريعة لقياس الجاهزية والتشغيل والمخزون داخل النظام.</p>
+                </div>
+                <button id="refresh-dashboard-btn" class="btn btn-success" type="button">تحديث الرئيسية</button>
+            </div>
+
+            <div id="dashboard-alert" class="alert hidden"></div>
+
+            <div class="dashboard-kpis">
+                <div class="dashboard-kpi-card">
+                    <span class="kpi-label">إجمالي الآليات</span>
+                    <strong id="kpi-machines-total">0</strong>
+                    <small id="kpi-machines-ready-note">جاهزية 0%</small>
+                </div>
+                <div class="dashboard-kpi-card">
+                    <span class="kpi-label">المستخدمون</span>
+                    <strong id="kpi-users-total">0</strong>
+                    <small id="kpi-drivers-note">السائقون 0</small>
+                </div>
+                <div class="dashboard-kpi-card">
+                    <span class="kpi-label">المستودعات والمواقع</span>
+                    <strong id="kpi-warehouses-total">0</strong>
+                    <small id="kpi-locations-note">المواقع 0</small>
+                </div>
+                <div class="dashboard-kpi-card">
+                    <span class="kpi-label">المخزون المنخفض</span>
+                    <strong id="kpi-low-stock">0</strong>
+                    <small id="kpi-suppliers-note">الموردون 0</small>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-head">
+                        <h4>حالة الآليات</h4>
+                        <span id="machines-status-summary" class="panel-note">لا توجد بيانات بعد</span>
+                    </div>
+                    <div class="dashboard-chart-wrap">
+                        <canvas id="machinesStatusChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-head">
+                        <h4>توزيع المستخدمين حسب الصلاحية</h4>
+                        <span id="users-role-summary" class="panel-note">لا توجد بيانات بعد</span>
+                    </div>
+                    <div class="dashboard-chart-wrap">
+                        <canvas id="usersRolesChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-head">
+                        <h4>المواقع حسب الحالة</h4>
+                        <span id="locations-status-summary" class="panel-note">لا توجد بيانات بعد</span>
+                    </div>
+                    <div class="dashboard-chart-wrap">
+                        <canvas id="locationsStatusChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="dashboard-panel">
+                    <div class="dashboard-panel-head">
+                        <h4>تنبيهات مهمة</h4>
+                        <span class="panel-note">مبنية على البيانات الحالية</span>
+                    </div>
+                    <ul id="dashboard-insights" class="dashboard-insights">
+                        <li>جاري تحميل المؤشرات...</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div id="users" class="card tab-content hidden">
+            <div id="users-table-body-alert" class="alert hidden"></div>
+            <h3>إدارة المستخدمين</h3>
+            <button class="btn btn-success" id="open-add-user-modal">إضافة مستخدم</button>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>#ID</th>
+                        <th>اسم المستخدم الكامل</th>
+                        <th>البريد الإلكتروني</th>
+                        <th>الصلاحية</th>
+                        <th>الحالة</th>
+                        <th>الإجراءات</th>
+                    </tr>
+                </thead>
+                <tbody id="users-table-body"></tbody>
+            </table>
+        </div>
+
+        <div id="dock-release-requests" class="card tab-content hidden">
+            <div class="requests-section">
+                <div class="requests-header">
+                    <div>
+                        <h3>طلبات الشراء</h3>
+                        <p class="dashboard-subtitle">الطلبات الواردة من المشرف لشراء قطع أو مواد جديدة مع مورد مقترح.</p>
+                    </div>
+                    <button id="refresh-purchase-requests-btn" class="btn btn-success" type="button">تحديث طلبات الشراء</button>
+                </div>
+
+                <div id="purchase-requests-alert" class="alert hidden"></div>
+
+                <div class="table-responsive">
+                    <table class="table purchase-requests-table">
+                        <thead>
+                            <tr>
+                                <th>الحالة</th>
+                                <th>القطعة</th>
+                                <th>الكمية</th>
+                                <th>المورد المقترح</th>
+                                <th>مقدم الطلب</th>
+                                <th>التاريخ</th>
+                                <th>المراجعة</th>
+                                <th>الإجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody id="purchase-requests-body">
+                            <tr>
+                                <td colspan="8" style="text-align: center;">جاري تحميل طلبات الشراء...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="requests-divider"></div>
+
+            <div class="requests-header">
+                <div>
+                    <h3>طلبات تسليم الحاويات</h3>
+                    <p class="dashboard-subtitle">تظهر هنا الطلبات الواردة من مدير الرصيف لاعتماد تحرير موقع الحاوية.</p>
+                </div>
+                <button id="refresh-dock-release-requests-btn" class="btn btn-success" type="button">تحديث الطلبات</button>
+            </div>
+
+            <div id="dock-release-requests-alert" class="alert hidden"></div>
+
+            <div class="table-responsive">
+                <table class="table requests-table">
+                    <thead>
+                        <tr>
+                            <th>الحالة</th>
+                            <th>الخانة</th>
+                            <th>الزبون / المستورد</th>
+                            <th>المخلص الجمركي</th>
+                            <th>الباخرة / الرحلة</th>
+                            <th>بوليصة الشحن</th>
+                            <th>البيان الجمركي</th>
+                            <th>الحاويات</th>
+                            <th>العدد</th>
+                            <th>الوصول</th>
+                            <th>التخليص والتسليم</th>
+                            <th>المرسل</th>
+                            <th>الإجراء</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dock-release-requests-body">
+                        <tr>
+                            <td colspan="13" style="text-align: center;">جاري تحميل الطلبات...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <iframe id="content-iframe" class="tab-content hidden" frameborder="0"></iframe>
+    </div>
+
+    <div id="addUserModal" class="modal admin-modal">
+        <div class="modal-content admin-modal-content">
+            <div class="modal-header">
+                <h4>إضافة مستخدم جديد</h4>
+                <span id="close-add-user-modal" class="close-btn" role="button" tabindex="0" aria-label="?????">&times;</span>
+            </div>
+
+            <form id="add-user-form">
+                <div id="user-alert" class="alert alert-error hidden"></div>
+
+                <label for="username">اسم المستخدم:</label>
+                <input type="text" id="username" name="username" class="input" required>
+
+                <label for="email">البريد الإلكتروني:</label>
+                <input type="email" id="email" name="email" class="input" required>
+
+                <label for="password">كلمة المرور:</label>
+                <input type="password" id="password" name="password" class="input" required>
+
+                <label for="role">الصلاحية:</label>
+                <select id="role" name="role" class="input" required>
+                    <option value="admin">مدير (Admin)</option>
+                    <option value="supervisor">مشرف (Supervisor)</option>
+                    <option value="dockmanager">مدير رصيف (Dock Manager)</option>
+                    <option value="mechanic">فني (Mechanic)</option>
+                    <option value="Driver">سائق (Driver)</option>
+                </select>
+
+                <button type="submit" class="btn btn-success" style="width: 100%; margin-top: 15px;">إضافة وحفظ</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="scripts/admin.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تقييم المورد - نظام صيانة الأدوات البحرية</title>
+     <link rel="stylesheet" href="stylesheets/rating.css"> 
+     <link rel="stylesheet" href="stylesheets/theme.css"> 
+
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">نظام صيانة الأدوات - المرافئ البحرية السورية</div>
+                <a href="supllier.html" class="back-btn">العودة للقائمة الرئيسية</a>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <h1 class="page-title">تقييم المورد</h1>
+        
+        <div class="supplier-info">
+            <h2 id="supplier-name">اسم المورد سيظهر هنا</h2>
+            <p>يرجى الإجابة على جميع الأسئلة أدناه لتقييم هذا المورد بشكل دقيق. سيتم احتساب التقييم النهائي بناءً على إجاباتك.</p>
+        </div>
+
+        <form id="rating-form" class="rating-form">
+            <input type="hidden" id="supplier-id" name="supplier_id">
+            
+            <div class="question-group">
+                <h3>جودة المنتجات والخدمات</h3>
+                
+                <div class="question">
+                    <div class="question-text">1. جودة المنتجات/الخدمات المقدمة</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="quality" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="quality" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="quality" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="quality" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="quality" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question">
+                    <div class="question-text">2. الالتزام بالشروط والمواصفات المطلوبة</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="specs" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="specs" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="specs" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="specs" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="specs" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="question-group">
+                <h3>الموثوقية والالتزام بالجدول</h3>
+                
+                <div class="question">
+                    <div class="question-text">3. الالتزام بمواعيد التسليم</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="delivery" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="delivery" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="delivery" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="delivery" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="delivery" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="question-group">
+                <h3>جودة الخدمة والتعامل</h3>
+                
+                <div class="question">
+                    <div class="question-text">4. سرعة الاستجابة للطلبات والاستفسارات</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="response" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="response" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="response" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="response" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="response" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question">
+                    <div class="question-text">5. التعامل المهني والاحترافي</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="professionalism" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="professionalism" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="professionalism" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="professionalism" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="professionalism" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="question-group">
+                <h3>المرونة والتسعير</h3>
+                
+                <div class="question">
+                    <div class="question-text">6. مرونة التعامل مع الطلبات الخاصة والمتغيرة</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="flexibility" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="flexibility" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="flexibility" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="flexibility" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="flexibility" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+
+                <div class="question">
+                    <div class="question-text">7. شفافية الأسعار والعروض المقدمة</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="pricing" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="pricing" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="pricing" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="pricing" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="pricing" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="question-group">
+                <h3>الدعم والخدمات اللاحقة</h3>
+                
+                <div class="question">
+                    <div class="question-text">8. الدعم الفني والخدمات اللاحقة للبيع</div>
+                    <div class="rating-options">
+                        <label class="rating-option">
+                            <input type="radio" name="support" value="5" required> ممتاز (5 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="support" value="4"> جيد جداً (4 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="support" value="3"> جيد (3 نقاط)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="support" value="2"> متوسط (2 نقطة)
+                        </label>
+                        <label class="rating-option">
+                            <input type="radio" name="support" value="1"> ضعيف (1 نقطة)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button type="submit" class="btn btn-primary">حساب التقييم</button>
+                <button type="reset" class="btn btn-warning">إعادة تعيين</button>
+            </div>
+        </form>
+
+        <div class="result-section" id="rating-result">
+            <h2>نتيجة التقييم</h2>
+            <div class="rating-stars" id="final-stars"></div>
+            <div class="rating-text" id="rating-text"></div>
+            <p>شكراً لك على تقييم هذا المورد. سيتم استخدام هذا التقييم في تحسين عملياتنا المستقبلية.</p>
+            <div class="actions">
+                <button class="btn btn-primary" id="save-rating">حفظ التقييم</button>
+                <a href="supllier.html" class="btn btn-warning">العودة للقائمة الرئيسية</a>
+            </div>
+        </div>
+    </main>
+
+    <script src="scripts/rating.js"></script>
+</body>
+</html>

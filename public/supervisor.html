@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>نظام مستودع الصيانة البحرية</title>
+<!-- Chart.js & jsPDF used earlier if needed later -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="stylesheets/supervisor.css">
+<link rel="stylesheet" href="stylesheets/theme.css">
+</head>
+<body>
+<div class="container">
+  <h2>📦 نظام مستودع الصيانة البحرية</h2>
+  <div class="row topbar-row" style="justify-content:space-between;align-items:center">
+    <div class="row topbar-nav">
+      <button id="nav-inventory" type="button" class="btn">المخزون</button>
+      <button id="nav-requests" type="button" class="btn">الطلبات</button>
+      <button id="nav-suppliers" type="button" class="btn">الموردين</button>
+     
+      <button id="nav-transactions" type="button" class="btn">الحركات</button>
+    </div>
+    <div class="small">لإضافة مرفقات (صور قطع أو فواتير) استخدم نموذج إضافة/تعديل المادة أو استلام/صرف.</div>
+  </div>
+
+  <div id="warehouse-context-card" class="card warehouse-context-card">
+    <div class="warehouse-context-head">
+      <div>
+        <div class="warehouse-context-eyebrow">المستودع النشط</div>
+        <div id="warehouse-context-name" class="warehouse-context-name">جاري تحميل المستودعات...</div>
+      </div>
+      <div class="warehouse-context-meta">
+        <label for="warehouse-selector">تبديل المستودع</label>
+        <select id="warehouse-selector" class="input"></select>
+      </div>
+    </div>
+    <div id="warehouse-context-copy" class="warehouse-context-copy">سيتم عرض المخزون والطلبات والحركات الخاصة بالمستودع المختار فقط.</div>
+  </div>
+
+  <!-- Inventory -->
+  <div id="inventory" class="card">
+    <div class="section-toolbar" style="display:flex;justify-content:space-between;align-items:center">
+      <h3>المخزون</h3>
+      <div class="row section-toolbar-actions inventory-toolbar-actions">
+        <input id="searchItem" class="input" placeholder="بحث عن مادة أو كود" />
+        <button id="open-add-item-btn" type="button" class="btn">إضافة / استلام مادة</button>
+        <button id="open-issue-btn" type="button" class="btn secondary">صرف مادة</button>
+      </div>
+    </div>
+    <div id="lowStockAlert" class="alert hidden"></div>
+    <table id="itemsTable">
+      <thead><tr><th>الكود</th><th>المادة</th><th>الكمية</th><th>الحد الأدنى</th><th>موقع (مخزن/رف/خانة)</th><th>صور</th><th>إجراءات</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- Requests -->
+  <div id="requests" class="card hidden">
+    <div class="section-toolbar" style="display:flex;justify-content:space-between;align-items:center">
+      <h3>طلبات المواد</h3>
+      <div class="row section-toolbar-actions">
+        <button id="open-new-request-btn" type="button" class="btn">إنشاء طلب</button>
+        <button id="refresh-requests-btn" type="button" class="btn secondary">تحديث</button>
+      </div>
+    </div>
+    <table id="reqTable"><thead><tr><th>رقم</th><th>المادة</th><th>الكمية</th><th>طالب</th><th>الحالة</th><th>تاريخ</th><th>إجراءات</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <!-- Suppliers -->
+  <div id="suppliers" class="card hidden">
+    <h3>الموردون</h3>
+    <table id="supTable"><thead><tr><th>اسم</th><th>هاتف</th><th>مسؤول</th><th>عنوان</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <!-- Transactions -->
+  <div id="transactions" class="card hidden">
+    <h3>حركات المخزون</h3>
+    <table id="transTable"><thead><tr><th>رقم</th><th>نوع</th><th>مادة</th><th>كمية</th><th>مرجع</th><th>الموظف</th><th>تاريخ</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+
+</div>
+
+<!-- Modal root -->
+<div id="modalRoot"></div>
+
+<script src="scripts/supervisor.js"></script>
+</body>
+</html>

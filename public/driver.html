@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>السائقين</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="stylesheets/driver.css" />
+    <link rel="stylesheet" href="stylesheets/theme.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero card">
+        <div class="hero-copy">
+          <span class="eyebrow">بيانات مباشرة من النظام</span>
+          <h1>السائقين</h1>
+         
+
+          <div class="hero-tags">
+            <span class="tag">
+              <strong>آخر تحديث:</strong>
+              <span id="last-updated">--</span>
+            </span>
+            <span class="tag">
+              <strong>السائق المحدد:</strong>
+              <span id="current-driver-label">--</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="hero-glance">
+          <div class="glance-card">
+            <span>عدد السائقين</span>
+            <strong id="drivers-count">0</strong>
+            <small>إجمالي السائقين المسجلين في قاعدة البيانات</small>
+          </div>
+          <div class="glance-card">
+            <span>عدد المهام</span>
+            <strong id="active-missions-count">0</strong>
+            <small>المهام الخاصة بالسائق المحدد</small>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="fleet card">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">قائمة السائقين</span>
+              
+            </div>
+            <p id="drivers-summary">جاري تحميل السائقين من قاعدة البيانات...</p>
+          </div>
+          <div id="driver-list" class="driver-list" aria-label="قائمة السائقين"></div>
+        </section>
+
+        <section class="content-grid single-column">
+          <article class="profile card">
+            <div class="profile-header">
+              <div class="profile-identity">
+                <div id="driver-avatar" class="avatar">--</div>
+                <div>
+                  <span class="section-kicker">معلومات السائق</span>
+                  <h2 id="driver-name">--</h2>
+                  <p id="driver-role">--</p>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                <span id="driver-status" class="status-badge">--</span>
+                <button id="open-edit-driver-btn" class="btn btn-edit" type="button">تعديل المعلومات</button>
+              </div>
+            </div>
+
+            <div id="driver-edit-alert" class="small-muted"></div>
+            <div id="profile-grid" class="profile-grid"></div>
+
+            <div class="profile-note">
+              <h3>ملاحظة تشغيلية</h3>
+              <p id="driver-note">--</p>
+            </div>
+
+            <div id="metric-grid" class="metric-grid"></div>
+          </article>
+        </section>
+
+        <section class="missions card">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">المهام اليومية</span>
+              <h2>جدول المهام</h2>
+            </div>
+            <p id="table-caption">اختر سائقًا لعرض مهامه الحالية.</p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>رقم المهمة</th>
+                  <th>نوع المهمة</th>
+                  <th>الاستلام</th>
+                  <th>الوجهة</th>
+                  <th>الوقت</th>
+                  <th>الأولوية</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="missions-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="driver-edit-modal" class="modal-bg">
+      <div class="modal driver-edit-modal" role="dialog" aria-modal="true" aria-labelledby="driver-edit-title">
+        <div class="modal-header-row">
+          <div>
+            <span class="section-kicker">تعديل البيانات</span>
+            <h3 id="driver-edit-title">تعديل معلومات السائق</h3>
+          </div>
+          <button id="close-edit-driver-btn" class="modal-close-btn" type="button">×</button>
+        </div>
+
+        <div id="driver-modal-alert" class="small-muted"></div>
+
+        <div class="profile-grid">
+          <div class="info-card">
+            <span>الاسم</span>
+            <input id="modal-driver-name" type="text" />
+          </div>
+          <div class="info-card">
+            <span>الإيميل</span>
+            <input id="modal-driver-email" type="text" disabled />
+          </div>
+          <div class="info-card">
+            <span>رقم الهاتف</span>
+            <input id="modal-driver-phone" type="text" />
+          </div>
+          <div class="info-card">
+            <span>المناوبة</span>
+            <input id="modal-driver-shift" type="text" />
+          </div>
+          <div class="info-card">
+            <span>حالة المركبة</span>
+            <select id="modal-vehicle-status">
+              <option value="جاهزة">جاهزة</option>
+              <option value="تحت الصيانة">تحت الصيانة</option>
+              <option value="متوقفة">متوقفة</option>
+              <option value="في الخدمة">في الخدمة</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="save-driver-btn" class="btn btn-save" type="button">حفظ التعديلات</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="scripts/driver.js"></script>
+  </body>
+</html>

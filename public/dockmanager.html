@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة مدير الرصيف</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="stylesheets/dockmanager.css">
+</head>
+<body>
+    <main class="dock-shell">
+        <div
+            id="dock-level-hints"
+            class="hidden"
+            data-upper-hint="يتطلب ونش"
+            data-middle-hint="يتطلب ونش"
+            data-lower-hint="رافعة شوكية فقط"
+        ></div>
+
+        <header class="dock-header">
+            <div class="header-actions">
+                <button id="completed-containers-btn" class="secondary-btn" type="button">الحاويات المسلمة</button>
+                <button id="completed-vessels-btn" class="secondary-btn" type="button">البواخر المكتملة</button>
+                <button id="logout-btn" class="logout-btn" type="button">تسجيل خروج</button>
+            </div>
+
+            <div class="header-welcome">
+                <span class="welcome-badge">مدير الرصيف</span>
+                <h1 id="manager-name">مرحباً مدير الرصيف</h1>
+            </div>
+        </header>
+
+        <section class="summary-grid">
+            <article class="summary-card">
+                <div class="summary-icon">■</div>
+                <div>
+                    <p class="summary-label">عدد الحاويات</p>
+                    <strong id="containers-count">0/27</strong>
+                </div>
+            </article>
+
+            <article class="summary-card">
+                <div class="summary-icon">↔</div>
+                <div>
+                    <p class="summary-label">حالة الرصيف</p>
+                    <strong id="berth-status">فارغ</strong>
+                </div>
+            </article>
+        </section>
+
+        <div id="page-alert" class="page-alert hidden" role="status" aria-live="polite"></div>
+
+        <section class="reception-card">
+            <div class="reception-head">
+                <div>
+                    <span class="welcome-badge reception-badge">استقبال الباخرة</span>
+                    <h2>وحدة استقبال الباخرة</h2>
+                    <p class="reception-copy">سجّل الباخرة الواصلة أولاً، ثم أضف الحاويات المرتبطة بها من نفس الصفحة.</p>
+                </div>
+
+                <div class="reception-actions">
+                    <button id="open-vessel-modal-btn" class="primary-btn" type="button">إضافة باخرة واصلة</button>
+                    <button id="open-vessel-containers-modal-btn" class="secondary-btn hidden" type="button">إضافة الحاويات</button>
+                </div>
+            </div>
+
+            <div id="current-vessel-panel" class="current-vessel-panel hidden">
+                <div class="current-vessel-header">
+                    <div>
+                        <p class="summary-label">البواخر المسجلة</p>
+                        <strong id="vessels-count">0 باخرة</strong>
+                    </div>
+                </div>
+
+                <div id="vessels-list" class="vessels-list"></div>
+            </div>
+        </section>
+
+        <section class="berth-toolbar">
+            <div>
+                <span class="welcome-badge berth-badge">الأرصفة</span>
+                <h2 class="berth-title">اختر الرصيف لعرض مواقع الحاويات</h2>
+            </div>
+            <div id="berth-switcher" class="berth-switcher" aria-label="الأرصفة"></div>
+        </section>
+
+        <section class="berth-map-card">
+            <div class="berth-map-copy">
+                <span class="welcome-badge berth-badge">خريطة الأرصفة</span>
+                <h2 class="berth-title">اضغط على أي رصيف في الصورة لفتح عرضه الحالي</h2>
+            </div>
+
+            <div id="berth-map" class="berth-map" aria-label="خريطة الأرصفة التفاعلية">
+                <img src="images/port-berths-map.jpeg" alt="خريطة الأرصفة في الميناء">
+
+                <button type="button" class="berth-map-pin berth-map-pin-a" data-berth-key="A" aria-label="فتح رصيف A">
+                    <span>رصيف A</span>
+                </button>
+
+                <button type="button" class="berth-map-pin berth-map-pin-b" data-berth-key="B" aria-label="فتح رصيف B">
+                    <span>رصيف B</span>
+                </button>
+
+                <button type="button" class="berth-map-pin berth-map-pin-c" data-berth-key="C" aria-label="فتح رصيف C">
+                    <span>رصيف C</span>
+                </button>
+
+                <button type="button" class="berth-map-pin berth-map-pin-train" data-berth-key="TRAIN" aria-label="فتح رصيف القطار">
+                    <span>رصيف القطار</span>
+                </button>
+
+                <button type="button" class="berth-map-pin berth-map-pin-truck" data-berth-key="TRUCK" aria-label="فتح رصيف الشاحنات">
+                    <span>رصيف الشاحنات</span>
+                </button>
+            </div>
+        </section>
+
+        <section id="levels-grid" class="levels-grid"></section>
+    </main>
+
+    <div id="request-modal" class="modal-backdrop hidden">
+        <div class="request-modal">
+            <div class="modal-head">
+                <h3>طلب تسليم إلى الإدارة</h3>
+                <button id="close-request-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <p id="request-slot-meta" class="modal-meta"></p>
+
+            <form id="request-driver-form" class="modal-form">
+                <input type="hidden" id="request-slot-id" name="slotId">
+                <input type="hidden" id="request-container-number" name="containerNumber">
+
+                <label for="request-customer-name">اسم الزبون / المستورد</label>
+                <input id="request-customer-name" name="customerName" type="text" required readonly>
+
+                <label for="request-customs-broker-name">اسم المخلص الجمركي</label>
+                <input id="request-customs-broker-name" name="customsBrokerName" type="text" required>
+
+                <label for="request-vessel-name">اسم الباخرة / الرحلة</label>
+                <input id="request-vessel-name" name="vesselName" type="text" required readonly>
+
+                <label for="request-voyage-reference">اسم الرحلة / المرجع</label>
+                <input id="request-voyage-reference" name="voyageReference" type="text" required>
+
+                <label for="request-bill-of-lading-number">رقم بوليصة الشحن</label>
+                <input id="request-bill-of-lading-number" name="billOfLadingNumber" type="text" required>
+
+                <label for="request-customs-statement-number">رقم البيان / المعاملة الجمركية</label>
+                <input id="request-customs-statement-number" name="customsStatementNumber" type="text" required>
+
+                <label for="request-container-numbers">أرقام الحاويات</label>
+                <textarea id="request-container-numbers" name="containerNumbers" rows="3" required readonly></textarea>
+
+                <label for="request-arrival-date">تاريخ الوصول</label>
+                <input id="request-arrival-date" name="arrivalDate" type="date" required readonly>
+
+                <label for="request-clearance-delivery-date">تاريخ التخليص والتسليم</label>
+                <input id="request-clearance-delivery-date" name="clearanceDeliveryDate" type="date" required>
+
+                <label for="request-notes">ملاحظات إضافية</label>
+                <textarea id="request-notes" name="notes" rows="3"></textarea>
+
+                <button type="submit" class="primary-btn">إرسال الطلب إلى الإدارة</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="completed-modal" class="modal-backdrop hidden">
+        <div class="request-modal completed-modal">
+            <div class="modal-head">
+                <h3>الحاويات المسلمة</h3>
+                <button id="close-completed-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <div class="completed-table-wrap">
+                <table class="completed-table">
+                    <thead>
+                        <tr>
+                            <th>رقم الحاوية</th>
+                            <th>الموقع السابق</th>
+                            <th>المعتمد</th>
+                            <th>المالك</th>
+                        </tr>
+                    </thead>
+                    <tbody id="completed-containers-body">
+                        <tr>
+                            <td colspan="4">لا توجد حاويات مسلمة حالياً.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="completed-vessels-modal" class="modal-backdrop hidden">
+        <div class="request-modal completed-modal completed-vessels-modal">
+            <div class="modal-head">
+                <h3>البواخر المكتملة</h3>
+                <button id="close-completed-vessels-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <p class="modal-meta">تظهر هنا البواخر التي اكتمل تفريغها وتمت إزالتها من القائمة الرئيسية.</p>
+
+            <div class="completed-table-wrap">
+                <table class="completed-table">
+                    <thead>
+                        <tr>
+                            <th>رقم النظام</th>
+                            <th>اسم الباخرة</th>
+                            <th>الرحلة / IMO</th>
+                            <th>معلومات الباخرة</th>
+                            <th>الرصيف في الخطة</th>
+                            <th>وقت توليد الخطة</th>
+                            <th>وقت اكتمال التفريغ</th>
+                            <th>الحاويات المفرغة</th>
+                        </tr>
+                    </thead>
+                    <tbody id="completed-vessels-body">
+                        <tr>
+                            <td colspan="8">لا توجد بواخر مكتملة حالياً.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="completed-vessel-containers-modal" class="modal-backdrop hidden">
+        <div class="request-modal completed-modal completed-vessel-containers-modal">
+            <div class="modal-head">
+                <h3>الحاويات المفرغة للباخرة</h3>
+                <button id="close-completed-vessel-containers-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <p id="completed-vessel-containers-meta" class="modal-meta">تفاصيل الحاويات التي تم تفريغها فعلياً.</p>
+
+            <div class="completed-table-wrap">
+                <table class="completed-table">
+                    <thead>
+                        <tr>
+                            <th>رقم الحاوية</th>
+                            <th>الوجهة</th>
+                            <th>المكان النهائي</th>
+                            <th>السائق</th>
+                            <th>المعدة</th>
+                            <th>وقت التفريغ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="completed-vessel-containers-body">
+                        <tr>
+                            <td colspan="6">لا توجد حاويات مفرغة لهذه الباخرة حالياً.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="vessel-modal" class="modal-backdrop hidden">
+        <div class="request-modal vessel-modal">
+            <div class="modal-head">
+                <h3>إضافة باخرة واصلة</h3>
+                <button id="close-vessel-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <form id="incoming-vessel-form" class="modal-form">
+                <input id="vessel-name" name="vesselName" type="text" placeholder="اسم الباخرة" required>
+                <input id="voyage-reference" name="voyageReference" type="text" placeholder="رقم الرحلة أو IMO" required>
+                <input id="expected-arrival" name="expectedArrival" type="datetime-local" required>
+                <input id="arrival-source" name="arrivalSource" type="text" placeholder="جهة القدوم">
+                <input id="expected-container-count" name="expectedContainerCount" type="number" min="0" placeholder="عدد الحاويات المتوقع">
+                <select id="vessel-discharge-priority" name="dischargePriority" required>
+                    <option value="">أولوية التفريغ</option>
+                    <option value="urgent">عاجلة جداً</option>
+                    <option value="high">عالية</option>
+                    <option value="normal">متوسطة</option>
+                    <option value="low">منخفضة</option>
+                </select>
+                <textarea id="vessel-notes" name="notes" rows="4" placeholder="ملاحظات"></textarea>
+                <button type="submit" class="primary-btn">حفظ الباخرة</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="vessel-containers-modal" class="modal-backdrop hidden">
+        <div class="request-modal vessel-containers-modal">
+            <div class="modal-head">
+                <h3>إضافة حاويات الباخرة</h3>
+                <button id="close-vessel-containers-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <p id="vessel-containers-meta" class="modal-meta">أضف الحاويات المرتبطة بالباخرة الحالية.</p>
+
+            <form id="vessel-containers-form" class="modal-form">
+                <select id="vessel-select" name="vesselId" required>
+                    <option value="">اختر الباخرة</option>
+                </select>
+
+                <div class="table-toolbar">
+                    <button id="add-vessel-container-row" class="secondary-btn" type="button">إضافة صف</button>
+                </div>
+
+                <div class="completed-table-wrap vessel-containers-table-wrap">
+                    <table class="completed-table vessel-containers-table">
+                        <thead>
+                            <tr>
+                                <th>رقم الحاوية</th>
+                                <th>اسم المالك</th>
+                                <th>الحجم</th>
+                                <th>الحالة</th>
+                                <th>وزن الحاوية</th>
+                                <th>نوع الحمولة</th>
+                                <th>الوجهة</th>
+                                <th>إجراء</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vessel-containers-body"></tbody>
+                    </table>
+                </div>
+
+                <button type="submit" class="primary-btn">حفظ الحاويات</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="arrival-reason-modal" class="modal-backdrop hidden">
+        <div class="request-modal vessel-reason-modal">
+            <div class="modal-head">
+                <h3>إضافة سبب الفرق</h3>
+                <button id="close-arrival-reason-modal" type="button" class="close-modal-btn">×</button>
+            </div>
+
+            <p id="arrival-reason-meta" class="modal-meta">أدخل سبب الفرق بين عدد الحاويات المتوقع والمسجل لهذه الباخرة.</p>
+
+            <form id="arrival-reason-form" class="modal-form">
+                <input type="hidden" id="arrival-reason-vessel-id" name="vesselId">
+                <textarea id="arrival-reason-text" name="reason" rows="5" placeholder="اكتب سبب الفرق في عدد الحاويات" required></textarea>
+                <button type="submit" class="primary-btn">حفظ السبب</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="scripts/dockmanager.js"></script>
+</body>
+</html>

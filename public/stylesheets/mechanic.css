@@ -1,0 +1,386 @@
+body.mechanic-body {
+    color: var(--theme-text, #f3fbff);
+    background:
+        radial-gradient(circle at top right, rgba(35, 210, 181, 0.16), transparent 24%),
+        radial-gradient(circle at bottom left, rgba(247, 188, 98, 0.12), transparent 22%),
+        linear-gradient(135deg, #04131b 0%, #08202d 38%, #0d2c3a 100%);
+}
+
+body.mechanic-body::before {
+    display: block;
+}
+
+body.mechanic-body .mechanic-page {
+    width: min(1280px, calc(100% - 32px));
+    gap: 16px;
+}
+
+body.mechanic-body .mechanic-page header,
+body.mechanic-body .mechanic-page .panel,
+body.mechanic-body .mechanic-page .card,
+body.mechanic-body .mechanic-page .modal,
+body.mechanic-body .mechanic-page .summary-card {
+    color: var(--theme-text, #f3fbff);
+    background: linear-gradient(180deg, rgba(17, 51, 68, 0.9), rgba(8, 28, 40, 0.96));
+    border: 1px solid rgba(168, 210, 225, 0.16);
+    box-shadow: 0 28px 70px rgba(3, 11, 16, 0.34);
+    backdrop-filter: blur(14px);
+}
+
+body.mechanic-body .mechanic-page header::after,
+body.mechanic-body .mechanic-page .panel::after,
+body.mechanic-body .mechanic-page .card::after,
+body.mechanic-body .mechanic-page .modal::after {
+    display: block;
+}
+
+body.mechanic-body .mechanic-page .hero-header {
+    padding: 24px 26px;
+    border-radius: 28px;
+    align-items: center;
+}
+
+body.mechanic-body .mechanic-page .hero-copy {
+    gap: 8px;
+}
+
+body.mechanic-body .mechanic-page .hero-copy h1,
+body.mechanic-body .mechanic-page .panel h3,
+body.mechanic-body .mechanic-page .modal h2,
+body.mechanic-body .mechanic-page .modal h3,
+body.mechanic-body .mechanic-page .modal h4,
+body.mechanic-body .mechanic-page .summary-card strong {
+    color: var(--theme-text, #f3fbff);
+}
+
+body.mechanic-body .mechanic-page .hero-text,
+body.mechanic-body .mechanic-page .small-muted,
+body.mechanic-body .mechanic-page .small,
+body.mechanic-body .mechanic-page .form-row label,
+body.mechanic-body .mechanic-page th {
+    color: var(--theme-muted, #a9c0cd);
+}
+
+body.mechanic-body .mechanic-page .top-actions {
+    gap: 8px;
+}
+
+body.mechanic-body .mechanic-page button,
+body.mechanic-body .mechanic-page .btn {
+    border-radius: 14px;
+    padding: 10px 14px;
+}
+
+body.mechanic-body .mechanic-page button,
+body.mechanic-body .mechanic-page .btn:not(.ghost):not(.secondary) {
+    color: #042129;
+    background: linear-gradient(135deg, #35e7ca, #19c3a7);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 10px 22px rgba(35, 210, 181, 0.18);
+}
+
+body.mechanic-body .mechanic-page .btn.ghost {
+    color: var(--theme-text, #f3fbff);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(168, 210, 225, 0.18);
+    box-shadow: none;
+}
+
+body.mechanic-body .mechanic-page .btn.secondary {
+    color: #ffe3e3;
+    background: rgba(255, 122, 122, 0.16);
+    border: 1px solid rgba(255, 122, 122, 0.24);
+    box-shadow: none;
+}
+
+body.mechanic-body .mechanic-page .btn:hover,
+body.mechanic-body .mechanic-page button:hover {
+    transform: translateY(-1px);
+}
+
+body.mechanic-body .mechanic-page .summary-strip {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr) 220px;
+    gap: 12px;
+    align-items: stretch;
+}
+
+body.mechanic-body .mechanic-page .summary-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    min-height: 88px;
+    padding: 16px 18px;
+    border-radius: 20px;
+}
+
+body.mechanic-body .mechanic-page .summary-card strong {
+    font-size: 1.35rem;
+}
+
+body.mechanic-body .mechanic-page .summary-card-note strong {
+    font-size: 1rem;
+    line-height: 1.6;
+}
+
+body.mechanic-body .mechanic-page .summary-card-action {
+    align-items: stretch;
+}
+
+body.mechanic-body .mechanic-page .summary-card-action .btn {
+    width: 100%;
+    min-height: 100%;
+}
+
+body.mechanic-body .mechanic-page .section-heading {
+    margin-bottom: 14px;
+}
+
+body.mechanic-body .mechanic-page .section-heading h3 {
+    margin: 0 0 4px;
+    font-size: 1.15rem;
+}
+
+body.mechanic-body .mechanic-page .section-copy {
+    max-width: 640px;
+    line-height: 1.7;
+}
+
+body.mechanic-body .mechanic-page .panel {
+    padding: 18px;
+    border-radius: 24px;
+}
+
+body.mechanic-body .mechanic-page .overview-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
+}
+
+body.mechanic-body .mechanic-page .compact-alerts {
+    margin-bottom: 0;
+}
+
+body.mechanic-body .mechanic-page .alert {
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    border-radius: 16px;
+}
+
+body.mechanic-body .mechanic-page .alert.ok {
+    color: #dffff4;
+    background: linear-gradient(180deg, rgba(53, 214, 169, 0.22), rgba(16, 72, 67, 0.78));
+    border-color: rgba(53, 214, 169, 0.24);
+}
+
+body.mechanic-body .mechanic-page .alert.warn {
+    color: #ffe8c0;
+    background: linear-gradient(180deg, rgba(247, 188, 98, 0.22), rgba(97, 59, 16, 0.82));
+    border-color: rgba(247, 188, 98, 0.24);
+}
+
+body.mechanic-body .mechanic-page .alert.danger {
+    color: #ffe4e4;
+    background: linear-gradient(180deg, rgba(255, 122, 122, 0.22), rgba(86, 26, 33, 0.84));
+    border-color: rgba(255, 122, 122, 0.24);
+}
+
+body.mechanic-body .mechanic-page .compact-cards {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+body.mechanic-body .mechanic-page .card {
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 20px;
+}
+
+body.mechanic-body .mechanic-page .card .icon {
+    width: 42px;
+    height: 42px;
+    color: var(--theme-text, #f3fbff);
+    background: linear-gradient(135deg, rgba(35, 210, 181, 0.22), rgba(124, 209, 255, 0.16));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+}
+
+body.mechanic-body .mechanic-page .big {
+    font-size: 1rem;
+    color: var(--theme-text, #f3fbff);
+}
+
+body.mechanic-body .mechanic-page .stats-shell {
+    gap: 12px;
+}
+
+body.mechanic-body .mechanic-page .stats-columns {
+    gap: 14px;
+}
+
+body.mechanic-body .mechanic-page .stats-list,
+body.mechanic-body .mechanic-page .inventory-list {
+    gap: 8px;
+}
+
+body.mechanic-body .mechanic-page .pill {
+    color: var(--theme-muted, #a9c0cd);
+    background: linear-gradient(180deg, rgba(13, 40, 53, 0.88), rgba(8, 24, 34, 0.92));
+    border: 1px solid rgba(168, 210, 225, 0.12);
+}
+
+body.mechanic-body .mechanic-page canvas {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.03));
+    border: 1px solid rgba(168, 210, 225, 0.12);
+    border-radius: 18px;
+}
+
+body.mechanic-body .mechanic-page .table-wrap {
+    border: 1px solid rgba(168, 210, 225, 0.1);
+    border-radius: 18px;
+}
+
+body.mechanic-body .mechanic-page .table-wrap table {
+    table-layout: auto;
+    border-radius: 18px;
+}
+
+body.mechanic-body .mechanic-page .discharge-panel .table-wrap table {
+    min-width: 1120px;
+}
+
+body.mechanic-body .mechanic-page .machines-panel .table-wrap table {
+    min-width: 1200px;
+}
+
+body.mechanic-body .mechanic-page thead tr {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+body.mechanic-body .mechanic-page th,
+body.mechanic-body .mechanic-page td {
+    color: var(--theme-text, #f3fbff);
+    padding: 12px 10px;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(168, 210, 225, 0.09);
+}
+
+body.mechanic-body .mechanic-page tbody tr:hover td {
+    background: linear-gradient(90deg, rgba(35, 210, 181, 0.08), rgba(255, 255, 255, 0.02));
+}
+
+body.mechanic-body .mechanic-page .actions {
+    justify-content: flex-start;
+    align-items: stretch;
+}
+
+body.mechanic-body .mechanic-page .actions button {
+    min-height: 34px;
+    padding: 7px 10px;
+}
+
+body.mechanic-body .mechanic-page .table-wrap select {
+    min-width: 160px;
+}
+
+body.mechanic-body .mechanic-page .search-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body.mechanic-body .mechanic-page input[type="search"],
+body.mechanic-body .mechanic-page select,
+body.mechanic-body .mechanic-page input[type="date"],
+body.mechanic-body .mechanic-page input[type="number"],
+body.mechanic-body .mechanic-page input[type="text"],
+body.mechanic-body .mechanic-page textarea {
+    min-height: 44px;
+    color: var(--theme-text, #f3fbff);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(168, 210, 225, 0.16);
+    border-radius: 14px;
+}
+
+body.mechanic-body .mechanic-page input::placeholder,
+body.mechanic-body .mechanic-page textarea::placeholder {
+    color: rgba(169, 192, 205, 0.78);
+}
+
+body.mechanic-body .mechanic-page input:focus,
+body.mechanic-body .mechanic-page select:focus,
+body.mechanic-body .mechanic-page textarea:focus {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(35, 210, 181, 0.42);
+    box-shadow: 0 0 0 4px rgba(35, 210, 181, 0.1);
+}
+
+body.mechanic-body .mechanic-page .form-row {
+    padding: 12px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(168, 210, 225, 0.12);
+}
+
+body.mechanic-body .mechanic-page .modal-bg {
+    background: rgba(1, 10, 15, 0.72);
+    backdrop-filter: blur(8px);
+}
+
+body.mechanic-body .mechanic-page .modal {
+    padding: 18px;
+    border-radius: 24px;
+}
+
+body.mechanic-body .mechanic-page .modal-close-btn {
+    color: var(--theme-text, #f3fbff);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(168, 210, 225, 0.14);
+}
+
+body.mechanic-body .mechanic-page .modal-actions {
+    background: transparent;
+}
+
+body.mechanic-body .mechanic-page .mini-count {
+    min-width: 120px;
+    padding: 12px 14px;
+}
+
+@media (max-width: 1100px) {
+    body.mechanic-body .mechanic-page .summary-strip,
+    body.mechanic-body .mechanic-page .overview-grid,
+    body.mechanic-body .mechanic-page .search-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    body.mechanic-body .mechanic-page {
+        width: min(100% - 16px, 1280px);
+    }
+
+    body.mechanic-body .mechanic-page .hero-header {
+        padding: 18px 16px;
+    }
+
+    body.mechanic-body .mechanic-page .panel,
+    body.mechanic-body .mechanic-page .summary-card,
+    body.mechanic-body .mechanic-page .modal {
+        border-radius: 18px;
+    }
+
+    body.mechanic-body .mechanic-page .top-actions {
+        width: 100%;
+    }
+
+    body.mechanic-body .mechanic-page .top-actions .btn,
+    body.mechanic-body .mechanic-page .top-actions button {
+        flex: 1 1 calc(50% - 8px);
+    }
+
+    body.mechanic-body .mechanic-page .section-actions {
+        width: 100%;
+    }
+
+    body.mechanic-body .mechanic-page .section-actions .btn,
+    body.mechanic-body .mechanic-page .section-actions .summary-card {
+        width: 100%;
+    }
+}

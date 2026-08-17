@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>صفحة السائق</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="stylesheets/driver.css" />
+    <link rel="stylesheet" href="stylesheets/theme.css" />
+  </head>
+  <body class="driver-profile-page">
+    <div class="page-shell">
+      <header class="hero card">
+        <div class="hero-copy">
+          <span class="eyebrow">حساب السائق</span>
+          <h1>لوحة معلومات السائق</h1>
+          <p>عرض بيانات السائق، المركبة المرتبطة، وجدول المهام اليومية.</p>
+
+          <div class="hero-tags">
+            <span class="tag">
+              <strong>المناوبة:</strong>
+              <span id="current-shift-label">--</span>
+            </span>
+            <span class="tag">
+              <strong>آخر تحديث:</strong>
+              <span id="last-updated">--</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="hero-glance">
+          <div class="glance-card">
+            <span>حالة المركبة</span>
+            <strong id="vehicle-status-card">--</strong>
+            <small>الحالة التشغيلية الحالية</small>
+          </div>
+          <div class="glance-card">
+            <span>عدد المهام</span>
+            <strong id="active-missions-count">0</strong>
+            <small>المهام المسندة لهذا السائق</small>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="content-grid single-column">
+          <article class="profile card">
+            <div class="profile-header">
+              <div class="profile-identity">
+                <div id="driver-avatar" class="avatar">--</div>
+                <div>
+                  <span class="section-kicker">معلومات السائق</span>
+                  <h2 id="driver-name">--</h2>
+                  <p id="driver-role">--</p>
+                </div>
+              </div>
+              <span id="driver-status" class="status-badge">--</span>
+            </div>
+
+            <div id="profile-grid" class="profile-grid"></div>
+
+            <div class="profile-note">
+              <h3>ملاحظة تشغيلية</h3>
+              <p id="driver-note">--</p>
+            </div>
+
+            <div id="metric-grid" class="metric-grid"></div>
+          </article>
+        </section>
+
+        <section id="vehicle-assignment-notice" class="missions card" hidden>
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">تنبيه</span>
+              <h2>لا توجد مركبة مرتبطة</h2>
+            </div>
+            <p>يجب ربط مركبة بهذا السائق أولًا حتى تظهر بيانات الفحص والصيانة.</p>
+          </div>
+
+          <div class="info-card vehicle-assignment-notice-card">
+            <strong>تم إخفاء أقسام الفحص والصيانة مؤقتًا لعدم وجود مركبة مرتبطة بهذا السائق.</strong>
+          </div>
+        </section>
+
+        <section id="inspection-section" class="missions card">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">التنبيهات والفحص الدوري</span>
+              <h2>فحص المركبة</h2>
+            </div>
+            <p id="inspection-caption">جارٍ تحميل حالة الفحص الحالية...</p>
+          </div>
+
+          <div id="inspection-summary" class="inspection-summary"></div>
+        </section>
+
+        <section class="missions card">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">المهام اليومية</span>
+              <h2>جدول المهام</h2>
+            </div>
+            <p id="table-caption">عرض المهام الحالية الخاصة بالسائق.</p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>رقم المهمة</th>
+                  <th>نوع المهمة</th>
+                  <th>الاستلام</th>
+                  <th>الوجهة</th>
+                  <th>الوقت</th>
+                  <th>الأولوية</th>
+                  <th>الحالة</th>
+                  <th>الإجراءات</th>
+                </tr>
+              </thead>
+              <tbody id="missions-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="maintenance-section" class="missions card">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">إشعارات الصيانة</span>
+              <h2>طلبات الصيانة</h2>
+            </div>
+            <p>تظهر هنا طلبات الصيانة وحالتها الحالية.</p>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>رقم الطلب</th>
+                  <th>المادة</th>
+                  <th>الكمية</th>
+                  <th>السبب</th>
+                  <th>تاريخ التقديم</th>
+                  <th>الحالة</th>
+                </tr>
+              </thead>
+              <tbody id="maintenance-requests-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="maintenanceRequestModal" class="modal-bg">
+      <div class="card driver-edit-modal">
+        <div class="modal-header-row">
+          <div>
+            <h3>إنشاء طلب صيانة</h3>
+            <p>بإنتظار رد مدير الآليات.</p>
+          </div>
+          <button type="button" class="modal-close-btn" id="closeMaintenanceRequestModal">×</button>
+        </div>
+
+        <form id="maintenanceRequestForm">
+          <div class="profile-grid">
+            <label class="info-card">
+              <span>المادة المطلوبة</span>
+              <select id="maintenanceItemId" required></select>
+            </label>
+            <label class="info-card">
+              <span>عدد المادة</span>
+              <input id="maintenanceQuantity" type="number" min="1" step="1" required />
+            </label>
+            <label class="info-card">
+              <span>تاريخ التقديم</span>
+              <input id="maintenanceRequestedDate" type="date" required />
+            </label>
+            <label class="info-card" style="grid-column: 1 / -1;">
+              <span>سبب الطلب</span>
+              <textarea id="maintenanceJustification" rows="4" required></textarea>
+            </label>
+          </div>
+
+          <div class="modal-actions">
+            <button type="submit" class="btn-save">إرسال الطلب</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="inspectionModal" class="modal-bg">
+      <div class="card driver-edit-modal inspection-modal" role="dialog" aria-modal="true" aria-labelledby="inspectionModalTitle">
+        <div class="modal-header-row">
+          <div>
+            <span class="section-kicker">فحص المركبة</span>
+            <h3 id="inspectionModalTitle">فحص المركبة</h3>
+            <p id="inspectionModalSubtitle" class="small-muted">أكمل جميع البنود المطلوبة للمتابعة.</p>
+          </div>
+          <button type="button" class="modal-close-btn" id="closeInspectionModal">×</button>
+        </div>
+
+        <div id="inspectionAlert" class="small-muted"></div>
+
+        <form id="inspectionForm">
+          <div class="inspection-checklist-head">
+            ضع علامة على كل عنصر بعد فحصه، واترك أي عنصر به ملاحظة بدون علامة.
+          </div>
+
+          <div id="inspectionChecklist" class="inspection-checklist-grid"></div>
+
+          <div class="profile-grid">
+            <label id="inspectionMileageCard" class="info-card" hidden>
+              <span>ممشى المركبة</span>
+              <input id="inspectionMileage" type="number" min="0" step="1" inputmode="numeric" />
+            </label>
+
+            <label id="inspectionNeedsPeriodicServiceCard" class="info-card" hidden>
+              <span>هل تحتاج المركبة لصيانة دورية؟</span>
+              <select id="inspectionNeedsPeriodicService">
+                <option value="false">لا</option>
+                <option value="true">نعم</option>
+              </select>
+            </label>
+
+            <label class="info-card">
+              <span>هل توجد مشكلة؟</span>
+              <select id="inspectionHasIssue">
+                <option value="false">لا</option>
+                <option value="true">نعم</option>
+              </select>
+            </label>
+
+            <label class="info-card" style="grid-column: 1 / -1;">
+              <span>ملاحظات</span>
+              <textarea id="inspectionNotes" rows="4" placeholder="أضف أي ملاحظة مهمة عن حالة المركبة"></textarea>
+            </label>
+          </div>
+
+          <div class="modal-actions">
+            <button id="saveInspectionBtn" type="submit" class="btn-save">حفظ الفحص</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="scripts/driver_profile.js"></script>
+  </body>
+</html>

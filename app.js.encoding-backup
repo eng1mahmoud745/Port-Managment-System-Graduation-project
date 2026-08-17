@@ -1,0 +1,3626 @@
+﻿
+const express = require('express');
+const mysql = require('mysql2');
+const bodyParser = require('body-parser');
+const crypto = require('crypto');
+const app = express();
+const port = 3000;
+
+const db = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'port_mng_db'
+});
+
+let usersIdColumn = null;
+const sessions = new Map();
+const ROLE_ALIASES = {
+    admin: 'admin',
+    supervisor: 'supervisor',
+    mechanic: 'mechanic',
+    driver: 'driver',
+    dockmanager: 'dockmanager',
+    'dock manager': 'dockmanager',
+    'dock_manager': 'dockmanager',
+    'ظ…ط¯ظٹط± ط±طµظٹظپ': 'dockmanager'
+};
+const STORED_ROLE_NAMES = {
+    admin: 'Admin',
+    supervisor: 'Supervisor',
+    mechanic: 'Mechanic',
+    driver: 'Driver',
+    dockmanager: 'DockManager'
+};
+const DOCK_LEVELS = [
+    { key: 'upper', label: 'ط§ظ„ظ…ط³طھظˆظ‰ ط§ظ„ط¹ظ„ظˆظٹ', prefix: 'UP', hint: 'ط¥ظٹظ‚ط§ظپ ظˆظ†ط´' },
+    { key: 'middle', label: 'ط§ظ„ظ…ط³طھظˆظ‰ ط§ظ„ظ…طھظˆط³ط·', prefix: 'MID', hint: 'ط¥ظٹظ‚ط§ظپ ظˆظ†ط´' },
+    { key: 'lower', label: 'ط§ظ„ظ…ط³طھظˆظ‰ ط§ظ„ط³ظپظ„ظٹ', prefix: 'LOW', hint: 'ط±ط§ظپط¹ط© ظپظ‚ط·' }
+];
+const PAGE_ROLE_ACCESS = {
+    '/admin.html': ['admin'],
+    '/supervisor.html': ['supervisor'],
+    '/dockmanager.html': ['dockmanager'],
+    '/driver_profile.html': ['driver']
+};
+
+function normalizeRoleKey(role) {
+    const normalizedValue = String(role || '').trim().toLowerCase();
+    return ROLE_ALIASES[normalizedValue] || normalizedValue;
+}
+
+function getStoredRoleName(role) {
+    const roleKey = normalizeRoleKey(role);
+    return STORED_ROLE_NAMES[roleKey] || String(role || '').trim();
+}
+
+function buildPathWithParams(pathname, params = {}) {
+    const searchParams = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+            searchParams.set(key, value);
+        }
+    });
+
+    const query = searchParams.toString();
+    return query ? `${pathname}?${query}` : pathname;
+}
+
+function getRoleRedirectPath(roleKey, email, sessionId = '') {
+    if (roleKey === 'admin') {
+        return buildPathWithParams('/admin.html', { sid: sessionId });
+    }
+
+    if (roleKey === 'supervisor') {
+        return buildPathWithParams('/supervisor.html', { sid: sessionId });
+    }
+
+    if (roleKey === 'dockmanager') {
+        return buildPathWithParams('/dockmanager.html', { sid: sessionId });
+    }
+
+    if (roleKey === 'driver') {
+        return buildPathWithParams('/driver_profile.html', {
+            email,
+            sid: sessionId
+        });
+    }
+
+    return buildPathWithParams('/vehicles2.html', { sid: sessionId });
+}
+
+function getAllowedRolesForPath(pathname) {
+    return PAGE_ROLE_ACCESS[pathname] || null;
+}
+
+function hasRequiredRole(session, allowedRoles = []) {
+    if (!session || !allowedRoles.length) {
+        return false;
+    }
+
+    return allowedRoles.some((role) => normalizeRoleKey(role) === normalizeRoleKey(session.role));
+}
+
+function requireRoles(allowedRoles = []) {
+    return (req, res, next) => {
+        const session = req.authSession || getSessionFromRequest(req);
+
+        if (!session) {
+            return res.status(401).json({ success: false, message: 'ط§ظ†طھظ‡طھ ط§ظ„ط¬ظ„ط³ط©طŒ ظٹط±ط¬ظ‰ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ظ…ظ† ط¬ط¯ظٹط¯.' });
+        }
+
+        if (!hasRequiredRole(session, allowedRoles)) {
+            return res.status(403).json({ success: false, message: 'ظ„ظٹط³طھ ظ„ط¯ظٹظƒ طµظ„ط§ط­ظٹط© ظ„ظ„ظˆطµظˆظ„ ط¥ظ„ظ‰ ظ‡ط°ظ‡ ط§ظ„طµظپط­ط©.' });
+        }
+
+        return next();
+    };
+}
+
+function parseCookies(req) {
+    const header = req.headers.cookie || '';
+    return header.split(';').reduce((cookies, item) => {
+        const [rawKey, ...rawValue] = item.split('=');
+        const key = String(rawKey || '').trim();
+
+        if (!key) {
+            return cookies;
+        }
+
+        cookies[key] = decodeURIComponent(rawValue.join('=').trim() || '');
+        return cookies;
+    }, {});
+}
+
+function getSessionIdFromRequest(req) {
+    const headerSessionId = String(req.headers['x-session-id'] || '').trim();
+    if (headerSessionId) {
+        return headerSessionId;
+    }
+
+    const querySessionId = String(req.query?.sid || '').trim();
+    if (querySessionId) {
+        return querySessionId;
+    }
+
+    const cookies = parseCookies(req);
+    return String(cookies.session_id || '').trim() || null;
+}
+
+function getSessionFromRequest(req) {
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+        return null;
+    }
+
+    return sessions.get(sessionId) || null;
+}
+
+function setNoStoreHeaders(res) {
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+}
+
+function isPublicPath(pathname) {
+    if (
+        pathname === '/' ||
+        pathname === '/login' ||
+        pathname === '/login.html' ||
+        pathname === '/api/login' ||
+        pathname === '/api/logout'
+    ) {
+        return true;
+    }
+
+    return (
+        pathname.startsWith('/stylesheets/') ||
+        pathname.startsWith('/scripts/') ||
+        pathname.startsWith('/images/') ||
+        pathname.startsWith('/assets/') ||
+        pathname.startsWith('/favicon')
+    );
+}
+
+db.connect(err => {
+    if (err) {
+        console.error('Error connecting to MySQL:', err.stack);
+        return;
+    }
+    console.log('Connected to MySQL as id ' + db.threadId);
+    ensureDriverColumns();
+    ensureMachineDriverSchema();
+    ensureDockSlotsSchema();
+    ensureDockRequestsSchema();
+});
+
+function getUsersIdColumn(callback) {
+    if (usersIdColumn) {
+        return callback(null, usersIdColumn);
+    }
+
+    db.query(`SHOW COLUMNS FROM Users`, (err, columns) => {
+        if (err) {
+            console.error('Error reading Users columns:', err);
+            return callback(err);
+        }
+
+        const columnNames = columns.map((column) => String(column.Field || '').toLowerCase());
+
+        if (columnNames.includes('user_id')) {
+            usersIdColumn = 'user_id';
+        } else if (columnNames.includes('id')) {
+            usersIdColumn = 'id';
+        } else {
+            usersIdColumn = String(columns[0]?.Field || 'user_id');
+        }
+
+        callback(null, usersIdColumn);
+    });
+}
+
+/* function ensureDriverColumns() {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.' });
+        }
+
+        const query = `
+        ALTER TABLE Users
+        ADD COLUMN IF NOT EXISTS shift VARCHAR(100) NULL,
+        ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL
+    `;
+
+    db.query(query, (err) => {
+        if (err) {
+            console.error('Error ensuring driver columns:', err);
+            return;
+        }
+        console.log('Users driver columns are ready');
+    });
+}
+
+*/
+function ensureDriverColumns() {
+    const query = `
+        ALTER TABLE Users
+        ADD COLUMN IF NOT EXISTS shift VARCHAR(100) NULL,
+        ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL
+    `;
+
+    db.query(query, (err) => {
+        if (err) {
+            console.error('Error ensuring driver columns:', err);
+            return;
+        }
+        console.log('Users driver columns are ready');
+    });
+}
+
+function ensureMachineDriverSchema() {
+    db.query(`ALTER TABLE Machines ADD COLUMN IF NOT EXISTS driver_user_id INT NULL`, (columnErr) => {
+        if (columnErr) {
+            console.error('Error ensuring Machines.driver_user_id column:', columnErr);
+            return;
+        }
+
+        db.query(`SHOW INDEX FROM Machines WHERE Key_name = 'uniq_driver_user_id'`, (indexErr, indexResults) => {
+            if (indexErr) {
+                console.error('Error checking driver assignment index:', indexErr);
+                return;
+            }
+
+            if (indexResults.length > 0) {
+                return;
+            }
+
+            db.query(`CREATE UNIQUE INDEX uniq_driver_user_id ON Machines(driver_user_id)`, (createIndexErr) => {
+                if (createIndexErr) {
+                    console.error('Error creating unique driver assignment index:', createIndexErr);
+                    return;
+                }
+
+                console.log('Machines driver assignment schema is ready');
+            });
+        });
+    });
+}
+
+function ensureDockSlotsSchema() {
+    const createDockSlotsTableQuery = `
+        CREATE TABLE IF NOT EXISTS dock_slots (
+            id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            level_key VARCHAR(20) NOT NULL,
+            slot_code VARCHAR(30) NOT NULL,
+            slot_order INT NOT NULL,
+            container_number VARCHAR(100) DEFAULT NULL,
+            owner_name VARCHAR(255) DEFAULT NULL,
+            container_type VARCHAR(50) DEFAULT NULL,
+            notes VARCHAR(255) DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_dock_slot_code (slot_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `;
+
+    db.query(createDockSlotsTableQuery, (tableErr) => {
+        if (tableErr) {
+            console.error('Error ensuring dock_slots table:', tableErr);
+            return;
+        }
+
+        db.query(
+            `ALTER TABLE dock_slots ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255) DEFAULT NULL AFTER container_number`,
+            (alterErr) => {
+                if (alterErr) {
+                    console.error('Error ensuring dock_slots.owner_name column:', alterErr);
+                    return;
+                }
+
+                const seedValues = [];
+                DOCK_LEVELS.forEach((level) => {
+                    for (let index = 1; index <= 9; index += 1) {
+                        seedValues.push([
+                            level.key,
+                            `${level.prefix}-${String(index).padStart(2, '0')}`,
+                            index
+                        ]);
+                    }
+                });
+
+                db.query(
+                    `
+                        INSERT IGNORE INTO dock_slots (level_key, slot_code, slot_order)
+                        VALUES ?
+                    `,
+                    [seedValues],
+                    (seedErr) => {
+                        if (seedErr) {
+                            console.error('Error seeding dock slots:', seedErr);
+                            return;
+                        }
+
+                        console.log('Dock slots schema is ready');
+                    }
+                );
+            }
+        );
+    });
+}
+
+function ensureDockRequestsSchema() {
+    const createDockRequestsTableQuery = `
+        CREATE TABLE IF NOT EXISTS dock_delivery_requests (
+            request_id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            slot_id INT NOT NULL,
+            container_number VARCHAR(100) NOT NULL,
+            slot_code VARCHAR(30) NOT NULL,
+            owner_name VARCHAR(255) DEFAULT NULL,
+            driver_user_id INT NOT NULL,
+            status ENUM('pending', 'approved', 'unavailable', 'completed', 'failed', 'delivered') NOT NULL DEFAULT 'pending',
+            response_note VARCHAR(255) DEFAULT NULL,
+            created_by_email VARCHAR(255) DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            responded_at TIMESTAMP NULL DEFAULT NULL,
+            delivered_at TIMESTAMP NULL DEFAULT NULL,
+            INDEX idx_dock_requests_slot (slot_id),
+            INDEX idx_dock_requests_driver (driver_user_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `;
+
+    db.query(createDockRequestsTableQuery, (tableErr) => {
+        if (tableErr) {
+            console.error('Error ensuring dock_delivery_requests table:', tableErr);
+            return;
+        }
+
+        db.query(
+            `ALTER TABLE dock_delivery_requests ADD COLUMN IF NOT EXISTS owner_name VARCHAR(255) DEFAULT NULL AFTER slot_code`,
+            (ownerAlterErr) => {
+                if (ownerAlterErr) {
+                    console.error('Error ensuring dock_delivery_requests.owner_name column:', ownerAlterErr);
+                    return;
+                }
+
+                db.query(
+                    `
+                        ALTER TABLE dock_delivery_requests
+                        MODIFY COLUMN status ENUM('pending', 'approved', 'unavailable', 'completed', 'failed', 'delivered')
+                        NOT NULL DEFAULT 'pending'
+                    `,
+                    (alterErr) => {
+                        if (alterErr) {
+                            console.error('Error updating dock request status enum:', alterErr);
+                            return;
+                        }
+
+                        console.log('Dock delivery requests schema is ready');
+                    }
+                );
+            }
+        );
+    });
+}
+
+function getDockLevelMeta(levelKey) {
+    return DOCK_LEVELS.find((level) => level.key === levelKey) || null;
+}
+
+function getDockBerthStatus(occupiedCount, totalSlots) {
+    if (!occupiedCount) {
+        return 'ظپط§ط±ط؛';
+    }
+
+    if (occupiedCount >= totalSlots) {
+        return 'ظ…ظ…طھظ„ط¦';
+    }
+
+    return 'ظ‚ظٹط¯ ط§ظ„طھط´ط؛ظٹظ„';
+}
+
+function getCurrentUserByEmail(email, callback) {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return callback(columnErr);
+        }
+
+        const query = `
+            SELECT ${userIdColumn} AS user_id, email, role, full_name
+            FROM Users
+            WHERE email = ?
+            LIMIT 1
+        `;
+
+        db.query(query, [email], (userErr, results) => {
+            if (userErr) {
+                return callback(userErr);
+            }
+
+            return callback(null, results[0] || null);
+        });
+    });
+}
+
+function getDockDrivers(callback) {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return callback(columnErr);
+        }
+
+        const query = `
+            SELECT ${userIdColumn} AS user_id, email, full_name
+            FROM Users
+            WHERE LOWER(TRIM(role)) = 'driver'
+            ORDER BY COALESCE(full_name, email) ASC
+        `;
+
+        db.query(query, (driverErr, results) => {
+            if (driverErr) {
+                return callback(driverErr);
+            }
+
+            return callback(null, results);
+        });
+    });
+}
+
+function getActiveDockRequests(callback) {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return callback(columnErr);
+        }
+
+        const query = `
+            SELECT
+                r.request_id,
+                r.slot_id,
+                r.container_number,
+                r.slot_code,
+                r.driver_user_id,
+                r.status,
+                r.response_note,
+                r.created_at,
+                r.responded_at,
+                u.${userIdColumn} AS linked_driver_id,
+                u.email AS driver_email,
+                u.full_name AS driver_name
+            FROM dock_delivery_requests r
+            LEFT JOIN Users u ON u.${userIdColumn} = r.driver_user_id
+            INNER JOIN (
+                SELECT slot_id, MAX(request_id) AS latest_request_id
+                FROM dock_delivery_requests
+                GROUP BY slot_id
+            ) latest ON latest.latest_request_id = r.request_id
+            WHERE r.status IN ('pending', 'approved', 'unavailable', 'failed')
+            ORDER BY r.created_at DESC
+        `;
+
+        db.query(query, (requestErr, results) => {
+            if (requestErr) {
+                return callback(requestErr);
+            }
+
+            return callback(null, results);
+        });
+    });
+}
+
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.json());
+
+app.use((req, res, next) => {
+    const pathname = req.path;
+    const session = getSessionFromRequest(req);
+    req.authSession = session;
+
+    const isHtmlRequest = pathname.endsWith('.html') || pathname === '/driver';
+    const isApiRequest = pathname.startsWith('/api/');
+
+    if (pathname === '/' || pathname === '/login' || pathname === '/login.html' || isHtmlRequest || isApiRequest) {
+        setNoStoreHeaders(res);
+    }
+
+    if (isPublicPath(pathname)) {
+        return next();
+    }
+
+    if (!session && (isHtmlRequest || isApiRequest)) {
+        if (isApiRequest) {
+            return res.status(401).json({ success: false, message: 'ط§ظ†طھظ‡طھ ط§ظ„ط¬ظ„ط³ط©طŒ ظٹط±ط¬ظ‰ طھط³ط¬ظٹظ„ ط§ظ„ط¯ط®ظˆظ„ ظ…ظ† ط¬ط¯ظٹط¯.' });
+        }
+
+        return res.redirect('/login.html');
+    }
+
+    const allowedRoles = getAllowedRolesForPath(pathname);
+    if (allowedRoles && session && !hasRequiredRole(session, allowedRoles)) {
+            return res.redirect(getRoleRedirectPath(session.role, session.email, getSessionIdFromRequest(req)));
+    }
+
+    return next();
+});
+
+app.use(express.static('public'));
+
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/public/login.html');
+});
+
+
+app.get('/login', (req, res) => {
+    res.sendFile(__dirname + '/public/login.html');
+});
+
+app.get('/driver', (req, res) => {
+    res.sendFile(__dirname + '/public/driver.html');
+});
+
+
+app.post('/api/login', (req, res) => {
+    const { email, password } = req.body;
+
+    const query = 'SELECT role FROM Users WHERE email = ? AND password = ?';
+
+    db.query(query, [email, password], (err, results) => {
+        if (err) {
+            console.error(err);
+            return res.redirect('/login.html?error=DatabaseError');
+        }
+
+        if (results.length > 0) {
+            const userRole = normalizeRoleKey(results[0].role);
+            const sessionId = crypto.randomUUID();
+            sessions.set(sessionId, {
+                email,
+                role: userRole,
+                createdAt: Date.now()
+            });
+            res.setHeader('Set-Cookie', `session_id=${sessionId}; HttpOnly; Path=/; SameSite=Lax`);
+
+            return res.redirect(getRoleRedirectPath(userRole, email, sessionId));
+        }
+
+        return res.redirect('/login.html?error=InvalidCredentials');
+    });
+});
+
+app.post('/api/logout', (req, res) => {
+    const sessionId = getSessionIdFromRequest(req);
+
+    if (sessionId) {
+        sessions.delete(sessionId);
+    }
+
+    setNoStoreHeaders(res);
+    res.setHeader('Set-Cookie', 'session_id=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
+    return res.status(200).json({ success: true });
+});
+
+app.get('/api/session-status', (req, res) => {
+    if (!req.authSession) {
+        return res.status(401).json({ success: false, authenticated: false });
+    }
+
+    return res.status(200).json({
+        success: true,
+        authenticated: true,
+        session: {
+            email: req.authSession.email,
+            role: req.authSession.role,
+            sid: getSessionIdFromRequest(req)
+        }
+    });
+});
+
+
+/* app.get('/api/users', (req, res) => {
+
+    const query = `
+        SELECT 
+            user_id, email, role, full_name
+        FROM Users 
+        ORDER BY user_id DESC;
+    `;
+
+
+    db.query(query, (err, results) => {
+        if (err) {
+            console.error('Error fetching users:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ† ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        res.status(200).json({ success: true, users: results });
+    });
+});
+
+});
+*/
+app.get('/api/users', (req, res) => {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.' });
+        }
+
+        const query = `
+            SELECT 
+                ${userIdColumn} AS user_id, email, role, full_name
+            FROM Users 
+            ORDER BY ${userIdColumn} DESC;
+        `;
+
+        db.query(query, (err, results) => {
+            if (err) {
+                console.error('Error fetching users:', err);
+                return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ† ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+            }
+
+            res.status(200).json({ success: true, users: results });
+        });
+    });
+});
+
+app.post('/api/users', async (req, res) => {
+    const { username , email, password, role } = req.body;
+    const normalizedRole = getStoredRoleName(role);
+    const checkEmailQuery = 'SELECT * FROM Users WHERE email = ?';
+    db.query(checkEmailQuery, [email], (err, results) => {
+        if (err) {
+            console.error('Database error during email check:', err);
+            return res.status(500).json({ success: false, message: 'ط®ط·ط£ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ط£ط«ظ†ط§ط، ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ.' });
+        }
+
+        if (results.length > 0) {
+            return res.status(409).json({ success: false, message: 'ظ‡ط°ط§ ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„ ظ…ظ† ظ‚ط¨ظ„ ظ…ط³طھط®ط¯ظ… ط¢ط®ط±.' });
+        }
+                
+        const insertUserQuery = `
+            INSERT INTO users 
+            (email , password, role , full_name) 
+            VALUES (?, ?, ?, ?);
+        `;
+        
+        db.query(insertUserQuery, [ email, password, normalizedRole , username ], (err, result) => {
+            if (err) {
+                console.error('Database error on user insertion:', err);
+                
+                if (err.code === 'ER_DUP_ENTRY' && err.message.includes('username')) {
+                     return res.status(409).json({ success: false, message: 'ط§ط³ظ… ط§ظ„ظ…ط³طھط®ط¯ظ… ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„.' });
+                }
+                
+                return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط­ظپط¸ ط§ظ„ظ…ط³طھط®ط¯ظ… ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+            }
+
+            res.status(201).json({ 
+                success: true, 
+                message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ظ…ط³طھط®ط¯ظ… ط¨ظ†ط¬ط§ط­. ط³ظٹطھظ… طھط­ط¯ظٹط« ط§ظ„ظ‚ط§ط¦ظ…ط©.',
+                userId: result.insertId 
+            });
+        });
+    });
+    
+    
+    
+ });
+app.delete('/api/users/delete-by-email', (req, res) => {
+    const { email } = req.body; 
+
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، ط¥ط±ط³ط§ظ„ ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظ„ظ„ط­ط°ظپ.' });
+    }
+
+    const query = 'DELETE FROM Users WHERE email = ?';
+
+    db.query(query, [email], (err, result) => {
+        if (err) {
+            console.error(`Error deleting user with email ${email}:`, err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط­ط°ظپ ط§ظ„ظ…ط³طھط®ط¯ظ… ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: `ظ„ظ… ظٹطھظ… ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ظ…ط³طھط®ط¯ظ… ط¨ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ: ${email} ظ„ظ„ط­ط°ظپ.` });
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'طھظ… ط­ط°ظپ ط§ظ„ظ…ط³طھط®ط¯ظ… ط¨ظ†ط¬ط§ط­.' 
+        });
+    });
+});
+
+
+// GET /api/suppliers - ط¬ظ„ط¨ ط§ظ„ظ…ظˆط±ط¯ظٹظ† ظ…ط¹ ط¯ط¹ظ… ط§ظ„طھطµظپظٹط© ظˆط§ظ„ط¨ط­ط«
+app.get('/api/suppliers', (req, res) => {
+    
+    // 1. ط§ط³طھط®ط±ط§ط¬ ظ…ط¹ظ„ظ…ط§طھ ط§ظ„ط§ط³طھط¹ظ„ط§ظ… (Query Parameters)
+    const { search, category, min_rating, status } = req.query;
+   
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… SQL ط£ط³ط§ط³ظٹ
+    let query = `
+        SELECT 
+            supplier_id AS id, name, specialization, category, rating, 
+            primary_phone, secondary_phone, email, address, commercial_reg, 
+            tax_number, payment_terms, currency, status, transactions, total_value
+        FROM suppliers 
+        WHERE 1=1
+    `;
+    const params = [];
+
+    // 3. طھط·ط¨ظٹظ‚ ط´ط±ظˆط· ط§ظ„طھطµظپظٹط© ط¯ظٹظ†ط§ظ…ظٹظƒظٹط§ظ‹
+    
+    // ط§ظ„ط¨ط­ط« ط¨ط§ظ„ط§ط³ظ… ط£ظˆ ط§ظ„طھط®طµطµ
+    if (search) {
+        query += ` AND (name LIKE ? OR specialization LIKE ?)`;
+        params.push(`%${search}%`, `%${search}%`);
+    }
+
+    // ط§ظ„طھطµظپظٹط© ط¨ط§ظ„طھطµظ†ظٹظپ
+    if (category) {
+        query += ` AND category = ?`;
+        params.push(category);
+    }
+
+    // ط§ظ„طھطµظپظٹط© ط¨ط§ظ„ط­ط¯ ط§ظ„ط£ط¯ظ†ظ‰ ظ„ظ„طھظ‚ظٹظٹظ…
+    if (min_rating && !isNaN(parseInt(min_rating))) {
+        query += ` AND rating >= ?`;
+        params.push(parseInt(min_rating));
+    }
+
+    // ط§ظ„طھطµظپظٹط© ط¨ط­ط§ظ„ط© ط§ظ„ظ†ط´ط§ط·
+    if (status) {
+        query += ` AND status = ?`; 
+        params.push(status);
+    }
+
+    // ط§ظ„طھط±طھظٹط¨ ط§ظ„ط§ظپطھط±ط§ط¶ظٹ
+    query += ` ORDER BY name ASC;`;
+
+    // 4. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط¨ط§ط³طھط®ط¯ط§ظ… Callback
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Error fetching suppliers:', err);
+            // ط¥ط±ط¬ط§ط¹ ط±ط³ط§ظ„ط© ط®ط·ط£ ظ‚ظٹط§ط³ظٹط©
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ظˆط±ط¯ظٹظ† ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' 
+            });
+        }
+      
+        // 5. ط¥ط±ط³ط§ظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ
+        res.status(200).json({ 
+            success: true, 
+            suppliers: results // ط§ظ„ظ†طھط§ط¦ط¬ طھط­طھظˆظٹ ط¹ظ„ظ‰ ط­ظ‚ظ„ 'id' ط¨ط¯ظ„ط§ظ‹ ظ…ظ† 'supplier_id'
+        });
+    });
+});
+
+// ظپظٹ ظ…ظ„ظپ Express.js/app.js ط§ظ„ط®ط§طµ ط¨ظƒ
+// ------------------------------------------------------------------
+
+app.post('/api/suppliers', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨ (req.body)
+    // ظ†ط³طھط®ط¯ظ… ظ†ظ…ط· snake_case
+    const { 
+        name, 
+        specialization, 
+        category, 
+        rating, 
+        contact_person, 
+        primary_phone, 
+        secondary_phone, 
+        email, 
+        address, 
+        commercial_reg, 
+        tax_number, 
+        payment_terms, 
+        currency 
+    } = req.body;
+
+    // 2. ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ ظ…ظ† طµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ (ط¶ط±ظˆط±ظٹ)
+    if (!name || !primary_phone || !contact_person || rating === undefined || rating < 1 || rating > 5) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط§ظ„ط±ط¬ط§ط، طھط²ظˆظٹط¯ظ†ط§ ط¨ط§ظ„ط§ط³ظ…طŒ ط§ظ„ط´ط®طµ ط§ظ„ظ…ط³ط¤ظˆظ„طŒ ط§ظ„ظ‡ط§طھظپ ط§ظ„ط±ط¦ظٹط³ظٹطŒ ظˆط§ظ„طھظ‚ظٹظٹظ… (1-5).' 
+        });
+    }
+
+    // 3. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط¥ط¯ط±ط§ط¬ (INSERT)
+    const insertSupplierQuery = `
+        INSERT INTO suppliers (
+            name, specialization, category, rating, contact_person, 
+            primary_phone, secondary_phone, email, address, commercial_reg, 
+            tax_number, payment_terms, currency, status, transactions, total_value
+        ) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 0, 0)
+    `;
+    
+    // 4. طھط±طھظٹط¨ ط§ظ„ظ‚ظٹظ… ط§ظ„ظ…طھط؛ظٹط±ط©
+    const values = [
+        name, specialization, category, rating, contact_person,
+        primary_phone, secondary_phone, email, address, commercial_reg,
+        tax_number, payment_terms, currency
+    ];
+
+    // 5. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط¨ط§ط³طھط®ط¯ط§ظ… db.query ظ…ط¹ Callback
+    db.query(insertSupplierQuery, values, (err, result) => {
+        if (err) {
+            console.error('Database error on supplier insertion:', err);
+            
+            // ط§ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط®ط·ط£ طھظƒط±ط§ط± ط§ظ„ظ‚ظٹط¯ (ط¥ط°ط§ ظƒط§ظ† ظ„ط¯ظٹظƒ ظ‚ظٹط¯ ظپط±ظٹط¯ ط¹ظ„ظ‰ ط§ظ„ط§ط³ظ… ظ…ط«ظ„ط§ظ‹)
+            if (err.code === 'ER_DUP_ENTRY') {
+                 return res.status(409).json({ success: false, message: 'ظ‡ط°ط§ ط§ظ„ظ…ظˆط±ط¯ ظ…ظˆط¬ظˆط¯ ط¨ط§ظ„ظپط¹ظ„ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+            }
+            // ط§ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط£ظٹ ط®ط·ط£ ط¢ط®ط± ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط­ظپط¸ ط§ظ„ظ…ظˆط±ط¯ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.',
+                error: err.sqlMessage
+            });
+        }
+
+        // 6. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­ ط¨ط¹ط¯ ط§ظƒطھظ…ط§ظ„ ط§ظ„ط­ظپط¸ ط¨ظ†ط¬ط§ط­
+        res.status(201).json({ 
+            success: true, 
+            message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ظ…ظˆط±ط¯ ط¨ظ†ط¬ط§ط­.',
+            supplierId: result.insertId 
+        });
+    });
+});
+// ------------------------------------------------------------------
+// ظپظٹ ظ…ظ„ظپ Express.js/app.js ط§ظ„ط®ط§طµ ط¨ظƒ
+// ------------------------------------------------------------------
+
+app.put('/api/suppliers/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط± (URL)
+    const supplierId = req.params.id;
+
+    // 2. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظڈط¹ط¯ظ„ط© ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨ (req.body)
+    const { 
+        name, 
+        specialization, 
+        category, 
+        rating, 
+        contact_person, 
+        primary_phone, 
+        secondary_phone, 
+        email, 
+        address, 
+        commercial_reg, 
+        tax_number, 
+        payment_terms, 
+        currency 
+    } = req.body;
+
+    // 3. ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ ظ…ظ† ط§ظ„ظ€ ID ظˆطµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+    if (!supplierId || !name || rating === undefined || rating < 1 || rating > 5) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط¨ظٹط§ظ†ط§طھ ط§ظ„طھط­ط¯ظٹط« ط؛ظٹط± ظƒط§ظ…ظ„ط© ط£ظˆ ط؛ظٹط± طµط§ظ„ط­ط© (ط§ظ„ط§ط³ظ… ظˆط§ظ„طھظ‚ظٹظٹظ… ظ…ط·ظ„ظˆط¨ط§ظ†).' 
+        });
+    }
+
+    // 4. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„طھط­ط¯ظٹط« (UPDATE)
+    const updateSupplierQuery = `
+        UPDATE suppliers 
+        SET 
+            name = ?, 
+            specialization = ?, 
+            category = ?, 
+            rating = ?, 
+            contact_person = ?, 
+            primary_phone = ?, 
+            secondary_phone = ?, 
+            email = ?, 
+            address = ?, 
+            commercial_reg = ?, 
+            tax_number = ?, 
+            payment_terms = ?, 
+            currency = ?
+        WHERE supplier_id = ? 
+    `;
+    
+    // 5. طھط±طھظٹط¨ ط§ظ„ظ‚ظٹظ… ط§ظ„ظ…طھط؛ظٹط±ط© (ظٹط¬ط¨ ط£ظ† ظٹظƒظˆظ† ط§ظ„ظ€ ID ط¢ط®ط± ظ‚ظٹظ…ط©)
+    const values = [
+        name, specialization, category, rating, contact_person,
+        primary_phone, secondary_phone, email, address, commercial_reg,
+        tax_number, payment_terms, currency,
+        supplierId // ط§ظ„ظ€ ID ظٹظˆط¶ط¹ ظپظٹ ط§ظ„ظ†ظ‡ط§ظٹط© ظ„ظ„ط§ط³طھط®ط¯ط§ظ… ظپظٹ ط´ط±ط· WHERE
+    ];
+
+    // 6. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط¨ط§ط³طھط®ط¯ط§ظ… db.query ظ…ط¹ Callback
+    db.query(updateSupplierQuery, values, (err, result) => {
+        if (err) {
+            console.error('Database error on supplier update:', err);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، طھط­ط¯ظٹط« ط§ظ„ظ…ظˆط±ط¯.',
+                error: err.sqlMessage
+            });
+        }
+
+        // ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ ظƒط§ظ† ظ‚ط¯ طھظ… طھط¹ط¯ظٹظ„ ط£ظٹ طµظپ (ط£ظٹ ط¥ط°ط§ ظƒط§ظ† ط§ظ„ظ€ ID ظ…ظˆط¬ظˆط¯ط§ظ‹)
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆط±ط¯ ط§ظ„ظ…ط·ظ„ظˆط¨ طھط¹ط¯ظٹظ„ظ‡ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 7. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­ ط¨ط¹ط¯ ط§ظƒطھظ…ط§ظ„ ط§ظ„طھط­ط¯ظٹط«
+        res.status(200).json({ 
+            success: true, 
+            message: `طھظ… طھط­ط¯ظٹط« ط§ظ„ظ…ظˆط±ط¯ ID ${supplierId} ط¨ظ†ط¬ط§ط­.`
+        });
+    });
+});
+// ------------------------------------------------------------------
+// ظپظٹ ظ…ظ„ظپ Express.js/app.js ط§ظ„ط®ط§طµ ط¨ظƒ
+// ------------------------------------------------------------------
+
+app.get('/api/suppliers/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط± (URL)
+    const supplierId = req.params.id;
+
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط¬ظ„ط¨ (SELECT)
+    // ظ…ظ„ط§ط­ط¸ط©: ظ†ط³طھط®ط¯ظ… ط§ظ„ظ€ AS ظ„ط¶ظ…ط§ظ† طھط·ط§ط¨ظ‚ ط£ط³ظ…ط§ط، ط§ظ„ط£ط¹ظ…ط¯ط© ظ…ط¹ ظ…ط§ ظٹطھظˆظ‚ط¹ظ‡ ط§ظ„ظپط±ظˆظ†طھ ط¥ظ†ط¯ (snake_case)
+    const query = `
+        SELECT 
+            supplier_id AS id, 
+            name, 
+            specialization, 
+            category, 
+            rating, 
+            contact_person, 
+            primary_phone, 
+            secondary_phone, 
+            email, 
+            address, 
+            commercial_reg, 
+            tax_number, 
+            payment_terms, 
+            currency
+        FROM suppliers
+        WHERE supplier_id = ?
+    `;
+
+    // 3. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط¨ط§ط³طھط®ط¯ط§ظ… db.query ظ…ط¹ Callback
+    db.query(query, [supplierId], (err, results) => {
+        if (err) {
+            console.error('Database error on fetching single supplier:', err);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، ط¬ظ„ط¨ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظˆط±ط¯.' 
+            });
+        }
+
+        // 4. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ طھظ… ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ط§ظ„ظ…ظˆط±ط¯
+        if (results.length === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆط±ط¯ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 5. ط¥ط±ط³ط§ظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظˆط±ط¯ (ط§ظ„طµظپ ط§ظ„ط£ظˆظ„)
+        // ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ط§ط³طھط¬ط§ط¨ط© ظ‡ظٹ ظƒط§ط¦ظ† ط§ظ„ظ…ظˆط±ط¯ ظ…ط¨ط§ط´ط±ط© ظ„طھطھظ…ظƒظ† ظˆط§ط¬ظ‡ط© ط§ظ„ظ…ط³طھط®ط¯ظ… ظ…ظ† ظ…ظ„ط، ط§ظ„ظ†ظ…ظˆط°ط¬
+        res.status(200).json(results[0]); 
+    });
+});
+// ------------------------------------------------------------------
+// ظپظٹ ظ…ظ„ظپ Express.js/app.js ط§ظ„ط®ط§طµ ط¨ظƒ
+// ------------------------------------------------------------------
+
+app.delete('/api/suppliers/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط± (URL)
+    const supplierId = req.params.id;
+
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط­ط°ظپ (DELETE)
+    // ظ†ط³طھط®ط¯ظ… WHERE supplier_id = ? ظ„ط­ط°ظپ ظ…ظˆط±ط¯ ظ…ط­ط¯ط¯ ظپظ‚ط·
+    const deleteSupplierQuery = `
+        DELETE FROM suppliers 
+        WHERE supplier_id = ?
+    `;
+
+    // 3. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط¨ط§ط³طھط®ط¯ط§ظ… db.query ظ…ط¹ Callback
+    db.query(deleteSupplierQuery, [supplierId], (err, result) => {
+        if (err) {
+            console.error('Database error on supplier deletion:', err);
+            // ظ‚ط¯ ظٹظƒظˆظ† ط®ط·ط£ ظ…ظپطھط§ط­ ط®ط§ط±ط¬ظٹ (Foreign Key) ظٹظ…ظ†ط¹ ط§ظ„ط­ط°ظپ
+            if (err.code === 'ER_ROW_IS_REFERENCED_2') {
+                return res.status(409).json({
+                    success: false,
+                    message: 'ظ„ط§ ظٹظ…ظƒظ† ط­ط°ظپ ط§ظ„ظ…ظˆط±ط¯ ظ„ظˆط¬ظˆط¯ ط³ط¬ظ„ط§طھ ظ…ط±طھط¨ط·ط© ط¨ظ‡ (ظ…ط«ظ„ ط·ظ„ط¨ظٹط§طھ ط£ظˆ ظ…ظ†طھط¬ط§طھ). ظٹظپط¶ظ„ طھط¹ط·ظٹظ„ ط§ظ„ظ…ظˆط±ط¯ ط¨ط¯ظ„ط§ظ‹ ظ…ظ† ط­ط°ظپظ‡.'
+                });
+            }
+            return res.status(500).json({
+                success: false,
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، ط­ط°ظپ ط§ظ„ظ…ظˆط±ط¯.'
+            });
+        }
+
+        // 4. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ ظƒط§ظ† ظ‚ط¯ طھظ… ط­ط°ظپ ط£ظٹ طµظپ
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆط±ط¯ ط§ظ„ظ…ط·ظ„ظˆط¨ ط­ط°ظپظ‡ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 5. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­ ط¨ط¹ط¯ ط§ظƒطھظ…ط§ظ„ ط§ظ„ط­ط°ظپ
+        res.status(200).json({
+            success: true,
+            message: `طھظ… ط­ط°ظپ ط§ظ„ظ…ظˆط±ط¯ ID ${supplierId} ط¨ظ†ط¬ط§ط­.`
+        });
+    });
+});
+app.get('/api/machines', (req, res) => {
+    const { search, category, status, sort } = req.query;
+
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({
+                success: false,
+                message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.'
+            });
+        }
+
+        let query = `
+            SELECT 
+                m.machine_id,
+                m.machine_code,
+                m.machine_name,
+                m.category,
+                m.location_id,
+                m.status,
+                m.operating_hours,
+                m.last_maintenance_date,
+                m.next_maintenance_date,
+                m.supplier_id,
+                m.driver_user_id,
+                s.name AS supplier_name,
+                u.full_name AS driver_name
+            FROM Machines m
+            LEFT JOIN Suppliers s ON m.supplier_id = s.supplier_id
+            LEFT JOIN Users u ON m.driver_user_id = u.${userIdColumn}
+            WHERE 1=1
+        `;
+        const values = [];
+
+        if (search) {
+            const searchTerm = `%${search}%`;
+            query += ` AND (m.machine_name LIKE ? OR m.machine_code LIKE ?)`;
+            values.push(searchTerm, searchTerm);
+        }
+
+        if (category) {
+            query += ` AND m.category = ?`;
+            values.push(category);
+        }
+
+        if (status) {
+            query += ` AND m.status = ?`;
+            values.push(status);
+        }
+
+        if (sort) {
+            const [field, dir] = sort.split(':');
+            const allowedFields = ['machine_name', 'machine_code', 'next_maintenance_date', 'operating_hours'];
+            const direction = dir && dir.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+            if (allowedFields.includes(field)) {
+                query += ` ORDER BY m.${field} ${direction}`;
+            } else {
+                query += ` ORDER BY m.machine_name ASC`;
+            }
+        } else {
+            query += ` ORDER BY m.machine_name ASC`;
+        }
+
+        db.query(query, values, (err, results) => {
+            if (err) {
+                console.error('Database error on fetching machines:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'ظپط´ظ„ ط§ظ„ط®ط§ط¯ظ… ط£ط«ظ†ط§ط، ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ط¢ظ„ظٹط§طھ.'
+                });
+            }
+
+            res.status(200).json(results);
+        });
+    });
+});
+
+app.post('/api/machines', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨
+    const { 
+        machine_code, machine_name, category, location_id, status, 
+        operating_hours, purchase_date, last_maintenance_date, 
+        next_maintenance_date, supplier_id, facility_name, notes, driver_user_id 
+    } = req.body;
+
+    // 2. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط·ظ„ظˆط¨ط© (ط§ظ„ط­ط¯ ط§ظ„ط£ط¯ظ†ظ‰)
+    if (!machine_code || !machine_name || !status) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط§ظ„ط±ط¬ط§ط، ط¥ط¯ط®ط§ظ„ ط±ظ…ط² ظˆط§ط³ظ… ط§ظ„ط¢ظ„ظٹط© ظˆط­ط§ظ„طھظ‡ط§ ط§ظ„طھط´ط؛ظٹظ„ظٹط©.' 
+        });
+    }
+
+    // 3. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… INSERT INTO
+    const query = `
+        INSERT INTO Machines (
+            machine_code, machine_name, category, location_id, status, 
+            operating_hours, purchase_date, last_maintenance_date, 
+            next_maintenance_date, supplier_id, facility_name, notes, driver_user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    
+    // 4. طھط±طھظٹط¨ ط§ظ„ظ‚ظٹظ…
+    const values = [
+        machine_code, 
+        machine_name, 
+        category || null, 
+        location_id || null, 
+        status,
+        operating_hours || 0, 
+        purchase_date || null, 
+        last_maintenance_date || null, 
+        next_maintenance_date || null, 
+        supplier_id || null, // ظ…ظ‡ظ…: ط¥ط±ط³ط§ظ„ ط§ظ„ظ‚ظٹظ…ط© NULL ط¥ط°ط§ ظ„ظ… ظٹطھظ… ط¥ط±ط³ط§ظ„ ظ…ط¹ط±ظپ ظ…ظˆط±ط¯
+        facility_name || null, 
+        notes || null,
+        driver_user_id || null
+    ];
+
+    // 5. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ…
+    db.query(query, values, (err, result) => {
+        if (err) {
+            console.error('Database error on adding new machine:', err);
+            // ظ‚ط¯ ظٹظƒظˆظ† ط®ط·ط£ ظپظٹ ط§ظ„ظ€ Unique Constraint (ظ…ط«ظ„ طھظƒط±ط§ط± machine_code)
+            if (err.code === 'ER_DUP_ENTRY') {
+                if (String(err.message || '').includes('uniq_driver_user_id')) {
+                    return res.status(409).json({ success: false, message: 'ظ‡ط°ط§ ط§ظ„ط³ط§ط¦ظ‚ ظ…ط±طھط¨ط· ط¨ط§ظ„ظپط¹ظ„ ط¨ط¢ظ„ظٹط© ط£ط®ط±ظ‰.' });
+                }
+                return res.status(409).json({ success: false, message: 'ط±ظ…ط² ط§ظ„ط¢ظ„ظٹط© ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„.' });
+            }
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، ط¥ط¶ط§ظپط© ط§ظ„ط¢ظ„ظٹط©.' 
+            });
+        }
+        
+        // 6. ط§ظ„ط±ط¯ ط¨ظ†ط¬ط§ط­
+        res.status(201).json({ 
+            success: true, 
+            message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ط¢ظ„ظٹط© ط¨ظ†ط¬ط§ط­.', 
+            machine_id: result.insertId 
+        });
+    });
+});
+
+// PUT /api/machines/:id ظ„طھط¹ط¯ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط¢ظ„ظٹط© ظ…ظˆط¬ظˆط¯ط©
+app.put('/api/machines/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ظ…ط¹ط±ظپ ط§ظ„ط¢ظ„ظٹط© ظ…ظ† ط§ظ„ط¨ط§ط±ط§ظ…طھط±ط§طھ
+    const machineId = req.params.id;
+    
+    // 2. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨
+    const { 
+        machine_code, machine_name, category, location_id, status, 
+        purchase_date, last_maintenance_date, next_maintenance_date, 
+        operating_hours, supplier_id, facility_name, notes, driver_user_id 
+    } = req.body;
+
+    // 3. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† طµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط£ط³ط§ط³ظٹط©
+    if (!machine_code || !machine_name || !status) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، طھظˆظپظٹط± ط±ظ…ط² ظˆط§ط³ظ… ظˆط­ط§ظ„ط© ط§ظ„ط¢ظ„ظٹط©.' });
+    }
+
+    // 4. ط¬ظ…ظ„ط© SQL ظ„ظ„طھط­ط¯ظٹط«
+    const sql = `UPDATE machines SET 
+        machine_code = ?, 
+        machine_name = ?, 
+        category = ?, 
+        location_id = ?, 
+        status = ?, 
+        purchase_date = ?, 
+        last_maintenance_date = ?, 
+        next_maintenance_date = ?, 
+        operating_hours = ?, 
+        supplier_id = ?, 
+        facility_name = ?, 
+        notes = ?,
+        driver_user_id = ?
+        WHERE machine_id = ?`;
+
+    // 5. ظ…طµظپظˆظپط© ط§ظ„ظ‚ظٹظ…
+    const values = [
+        machine_code, machine_name, category, location_id, status,
+        purchase_date, last_maintenance_date, next_maintenance_date,
+        operating_hours, supplier_id || null, // ظٹظ…ظƒظ† ط£ظ† ظٹظƒظˆظ† supplier_id ظپط§ط±ط؛ظ‹ط§ (null)
+        facility_name, notes, driver_user_id || null, machineId
+    ];
+
+    // 6. طھظ†ظپظٹط° ط§ظ„طھط­ط¯ظٹط« ط¨ط§ط³طھط®ط¯ط§ظ… db.query
+    db.query(sql, values, (err, result) => {
+        if (err) {
+            console.error('Database error during machine update:', err);
+            if (err.code === 'ER_DUP_ENTRY' && String(err.message || '').includes('uniq_driver_user_id')) {
+                return res.status(409).json({ success: false, message: 'ظ‡ط°ط§ ط§ظ„ط³ط§ط¦ظ‚ ظ…ط±طھط¨ط· ط¨ط§ظ„ظپط¹ظ„ ط¨ط¢ظ„ظٹط© ط£ط®ط±ظ‰.' });
+            }
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط¢ظ„ظٹط©. طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ظ€ Console ط§ظ„ط®ط§طµ ط¨ط§ظ„ط®ط§ط¯ظ… ظ„ظ…ط¹ط±ظپط© ط§ظ„طھظپط§طµظٹظ„.' });
+        }
+
+        // 7. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط¹ط¯ط¯ ط§ظ„طµظپظˆظپ ط§ظ„طھظٹ طھط£ط«ط±طھ
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ط¢ظ„ظٹط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط© ط£ظˆ ظ„ظ… طھطھط؛ظٹط± ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        res.json({ success: true, message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط¢ظ„ظٹط© ط¨ظ†ط¬ط§ط­.' });
+    });
+});
+// DELETE /api/machines/:id ظ„ط­ط°ظپ ط¢ظ„ظٹط©
+app.delete('/api/machines/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ظ…ط¹ط±ظپ ط§ظ„ط¢ظ„ظٹط© ظ…ظ† ط§ظ„ط¨ط§ط±ط§ظ…طھط±ط§طھ
+    const machineId = req.params.id;
+
+    // 2. ط¬ظ…ظ„ط© SQL ظ„ظ„ط­ط°ظپ
+    const sql = `DELETE FROM machines WHERE machine_id = ?`;
+
+    // 3. طھظ†ظپظٹط° ط§ظ„ط­ط°ظپ ط¨ط§ط³طھط®ط¯ط§ظ… db.query
+    db.query(sql, [machineId], (err, result) => {
+        if (err) {
+            console.error('Database error during machine deletion:', err);
+            // ظ‚ط¯ ظٹظƒظˆظ† ط®ط·ط£ ظ…ظپطھط§ط­ ط®ط§ط±ط¬ظٹ ط¥ط°ط§ ظ„ظ… ظٹظƒظ† ON DELETE CASCADE ظپط¹ط§ظ„ط§ظ‹ ط£ظˆ ظ„ط³ط¨ط¨ ط¢ط®ط±
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط­ط°ظپ ط§ظ„ط¢ظ„ظٹط© ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        // 4. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط¹ط¯ط¯ ط§ظ„طµظپظˆظپ ط§ظ„طھظٹ طھط£ط«ط±طھ
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ط¢ظ„ظٹط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©.' });
+        }
+
+        // 5. ط¥ط±ط¬ط§ط¹ ط±ط³ط§ظ„ط© ظ†ط¬ط§ط­
+        // affectedRows ط³ظٹظƒظˆظ† 1 (ظ„ظ„ط¢ظ„ظٹط© ظ†ظپط³ظ‡ط§)طŒ ظˆط§ظ„ظ€ CASCADE ظٹطھظƒظپظ„ ط¨ط§ظ„ط¨ظ‚ظٹط©.
+        res.json({ success: true, message: 'طھظ… ط­ط°ظپ ط§ظ„ط¢ظ„ظٹط© ط¨ظ†ط¬ط§ط­.' });
+    });
+});
+// GET /api/warehouses - ط¬ظ„ط¨ ط§ظ„ظ…ط³طھظˆط¯ط¹ط§طھ ظ…ط¹ ط¯ط¹ظ… ط§ظ„طھطµظپظٹط© ظˆط§ظ„ط¨ط­ط«
+app.get('/api/warehouses', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ظ…ط¹ظ„ظ…ط§طھ ط§ظ„ط§ط³طھط¹ظ„ط§ظ… (Query Parameters)
+    const { search, status } = req.query;
+   
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… SQL ط£ط³ط§ط³ظٹ
+    let query = `
+        SELECT 
+            id, code, name, location, status, 
+            DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s') AS created_at
+        FROM warehouses 
+        WHERE 1=1
+    `;
+    const params = [];
+
+    // 3. طھط·ط¨ظٹظ‚ ط´ط±ظˆط· ط§ظ„طھطµظپظٹط© ط¯ظٹظ†ط§ظ…ظٹظƒظٹط§ظ‹
+    
+    // ط§ظ„ط¨ط­ط« ط¨ط§ظ„ط§ط³ظ… ط£ظˆ ط§ظ„ط±ظ…ط² ط£ظˆ ط§ظ„ظ…ظˆظ‚ط¹
+    if (search) {
+        query += ` AND (name LIKE ? OR code LIKE ? OR location LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    // ط§ظ„طھطµظپظٹط© ط¨ط§ظ„ط­ط§ظ„ط©
+    if (status) {
+        query += ` AND status = ?`;
+        params.push(status);
+    }
+
+    // ط§ظ„طھط±طھظٹط¨ ط§ظ„ط§ظپطھط±ط§ط¶ظٹ
+    query += ` ORDER BY name ASC;`;
+
+    // 4. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… 
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Error fetching warehouses:', err);
+            // ط¥ط±ط¬ط§ط¹ ط±ط³ط§ظ„ط© ط®ط·ط£ ظ‚ظٹط§ط³ظٹط©
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ط³طھظˆط¯ط¹ط§طھ ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' 
+            });
+        }
+      
+        // 5. ط¥ط±ط³ط§ظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ
+        res.status(200).json({ 
+            success: true, 
+            warehouses: results // ط¥ط±ط¬ط§ط¹ ظ…طµظپظˆظپط© ط§ظ„ظ…ط³طھظˆط¯ط¹ط§طھ
+        });
+    });
+});
+// POST /api/warehouses - ط¥ط¶ط§ظپط© ظ…ط³طھظˆط¯ط¹ ط¬ط¯ظٹط¯
+app.post('/api/warehouses', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨ (req.body)
+    const { code, name, location, status } = req.body;
+
+    // 2. ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ ظ…ظ† طµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+    if (!code || !name) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط§ظ„ط±ط¬ط§ط، طھظˆظپظٹط± ط±ظ…ط² ظˆط§ط³ظ… ط§ظ„ظ…ط³طھظˆط¯ط¹.' 
+        });
+    }
+
+    // 3. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† طھظƒط±ط§ط± ط±ظ…ط² ط§ظ„ظ…ط³طھظˆط¯ط¹ (UNIQUE constraint)
+    const checkCodeQuery = 'SELECT id FROM warehouses WHERE code = ?';
+    db.query(checkCodeQuery, [code], (err, results) => {
+        if (err) {
+            console.error('Database error during warehouse code check:', err);
+            return res.status(500).json({ success: false, message: 'ط®ط·ط£ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ط£ط«ظ†ط§ط، ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط±ظ…ط² ط§ظ„ظ…ط³طھظˆط¯ط¹.' });
+        }
+
+        if (results.length > 0) {
+            return res.status(409).json({ success: false, message: 'ط±ظ…ط² ط§ظ„ظ…ط³طھظˆط¯ط¹ (Code) ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„. ط§ظ„ط±ط¬ط§ط، ط§ط®طھظٹط§ط± ط±ظ…ط² ط¢ط®ط±.' });
+        }
+                
+        // 4. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط¥ط¯ط±ط§ط¬ (INSERT)
+        const insertQuery = `
+            INSERT INTO warehouses 
+            (code, name, location, status) 
+            VALUES (?, ?, ?, ?);
+        `;
+        
+        // 5. طھظ†ظپظٹط° ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط¥ط¯ط±ط§ط¬
+        db.query(insertQuery, [ code, name, location || null, status || 'ظ†ط´ط·' ], (err, result) => {
+            if (err) {
+                console.error('Database error on warehouse insertion:', err);
+                
+                // ظپظٹ ط­ط§ظ„ط© ظپط´ظ„ ط§ظ„ط¥ط¯ط±ط§ط¬ ظ„ط³ط¨ط¨ ط¢ط®ط±
+                return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط­ظپط¸ ط§ظ„ظ…ط³طھظˆط¯ط¹ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+            }
+
+            // 6. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­
+            res.status(201).json({ 
+                success: true, 
+                message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ظ…ط³طھظˆط¯ط¹ ط¨ظ†ط¬ط§ط­.',
+                id: result.insertId, // ط¥ط±ط¬ط§ط¹ ط§ظ„ظ…ط¹ط±ظپ ط§ظ„ط¬ط¯ظٹط¯
+                code: code
+            });
+        });
+    });
+});
+// PUT /api/warehouses/:id - طھط¹ط¯ظٹظ„ ط¨ظٹط§ظ†ط§طھ ظ…ط³طھظˆط¯ط¹ ظ…ظˆط¬ظˆط¯
+app.put('/api/warehouses/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط±
+    const warehouseId = req.params.id;
+
+    // 2. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظڈط¹ط¯ظ„ط© ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨
+    const { code, name, location, status } = req.body;
+
+    // 3. ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ ظ…ظ† ط§ظ„ظ€ ID ظˆطµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+    if (!warehouseId || !code || !name) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط¨ظٹط§ظ†ط§طھ ط§ظ„طھط­ط¯ظٹط« ط؛ظٹط± ظƒط§ظ…ظ„ط© (ط§ظ„ظ…ط¹ط±ظپطŒ ط§ظ„ط±ظ…ط²طŒ ظˆط§ظ„ط§ط³ظ… ظ…ط·ظ„ظˆط¨ط§ظ†).' 
+        });
+    }
+
+    // 4. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„طھط­ط¯ظٹط« (UPDATE)
+    // ظ…ظ„ط§ط­ط¸ط©: ظ„ط§ ط­ط§ط¬ط© ظ„ظ„طھط­ظ‚ظ‚ ظ…ظ† طھظƒط±ط§ط± ط§ظ„ظ€ code ظ‡ظ†ط§ ظ„ط£ظ† MySQL ط³ظٹطھط¹ط§ظ…ظ„ ظ…ط¹ ط§ظ„ظ€ UNIQUE constraintطŒ 
+    // ظˆظ„ظƒظ† ظٹط¬ط¨ ط¥ط¶ط§ظپط© ط¢ظ„ظٹط© ظ„ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط®ط·ط£ 'ER_DUP_ENTRY' ظ„ط§ط­ظ‚ظ‹ط§.
+    const updateQuery = `
+        UPDATE warehouses 
+        SET 
+            code = ?, 
+            name = ?, 
+            location = ?, 
+            status = ?
+        WHERE id = ? 
+    `;
+    
+    // 5. طھط±طھظٹط¨ ط§ظ„ظ‚ظٹظ… ط§ظ„ظ…طھط؛ظٹط±ط©
+    const values = [
+        code, name, location || null, status || 'ظ†ط´ط·',
+        warehouseId // ط§ظ„ظ€ ID ظٹظˆط¶ط¹ ظپظٹ ط§ظ„ظ†ظ‡ط§ظٹط© ظ„ظ„ط§ط³طھط®ط¯ط§ظ… ظپظٹ ط´ط±ط· WHERE
+    ];
+
+    // 6. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ…
+    db.query(updateQuery, values, (err, result) => {
+        if (err) {
+            console.error('Database error on warehouse update:', err);
+            
+            // ط§ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط®ط·ط£ طھظƒط±ط§ط± ط±ظ…ط² ط§ظ„ظ…ط³طھظˆط¯ط¹
+            if (err.code === 'ER_DUP_ENTRY') {
+                 return res.status(409).json({ success: false, message: 'ط±ظ…ط² ط§ظ„ظ…ط³طھظˆط¯ط¹ (Code) ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„ ظ…ظ† ظ‚ط¨ظ„ ظ…ط³طھظˆط¯ط¹ ط¢ط®ط±.' });
+            }
+
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، طھط­ط¯ظٹط« ط§ظ„ظ…ط³طھظˆط¯ط¹.'
+            });
+        }
+
+        // 7. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ ظƒط§ظ† ظ‚ط¯ طھظ… طھط¹ط¯ظٹظ„ ط£ظٹ طµظپ 
+        if (result.affectedRows === 0) {
+            // ظ…ظ„ط§ط­ط¸ط©: ظ‚ط¯ ظٹط¹ظ†ظٹ ظ‡ط°ط§ ط£ظ† ط§ظ„ظ…ط³طھظˆط¯ط¹ ط؛ظٹط± ظ…ظˆط¬ظˆط¯ ط£ظˆ ظ„ظ… ظٹطھظ… طھط؛ظٹظٹط± ط§ظ„ط¨ظٹط§ظ†ط§طھ
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„ظ…ط·ظ„ظˆط¨ طھط¹ط¯ظٹظ„ظ‡ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 8. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­
+        res.status(200).json({ 
+            success: true, 
+            message: `طھظ… طھط­ط¯ظٹط« ط§ظ„ظ…ط³طھظˆط¯ط¹ ID ${warehouseId} ط¨ظ†ط¬ط§ط­.`
+        });
+    });
+});
+// DELETE /api/warehouses/:id - ط­ط°ظپ ظ…ط³طھظˆط¯ط¹
+app.delete('/api/warehouses/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط±
+    const warehouseId = req.params.id;
+
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط­ط°ظپ (DELETE)
+    const deleteQuery = `
+        DELETE FROM warehouses 
+        WHERE id = ?
+    `;
+
+    // 3. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ…
+    db.query(deleteQuery, [warehouseId], (err, result) => {
+        if (err) {
+            console.error('Database error on warehouse deletion:', err);
+            
+            // ظپظٹ ط­ط§ظ„ط© ظˆط¬ظˆط¯ ط®ط·ط£ ط؛ظٹط± ظ…طھظˆظ‚ط¹ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+            return res.status(500).json({
+                success: false,
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، ط­ط°ظپ ط§ظ„ظ…ط³طھظˆط¯ط¹.'
+            });
+        }
+
+        // 4. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ ظƒط§ظ† ظ‚ط¯ طھظ… ط­ط°ظپ ط£ظٹ طµظپ
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„ظ…ط·ظ„ظˆط¨ ط­ط°ظپظ‡ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 5. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­
+        // ظ…ظ„ط§ط­ط¸ط©: ط§ظ„ظ€ CASCADE ظ‡ظˆ ظ…ظ† طھظƒظپظ„ ط¨ط­ط°ظپ ط§ظ„ظ…ظˆط§ظ‚ط¹ ط§ظ„طھط§ط¨ط¹ط© ظ„ظ‡.
+        res.status(200).json({
+            success: true,
+            message: `طھظ… ط­ط°ظپ ط§ظ„ظ…ط³طھظˆط¯ط¹ ID ${warehouseId} ظˆط¬ظ…ظٹط¹ ط§ظ„ظ…ظˆط§ظ‚ط¹ ط§ظ„طھط§ط¨ط¹ط© ظ„ظ‡ ط¨ظ†ط¬ط§ط­.`
+        });
+    });
+});
+// GET /api/locations - ط¬ظ„ط¨ ط§ظ„ظ…ظˆط§ظ‚ط¹ ظ…ط¹ ط¯ط¹ظ… ط§ظ„طھطµظپظٹط© ظˆط§ظ„ط¨ط­ط«
+app.get('/api/locations', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ظ…ط¹ظ„ظ…ط§طھ ط§ظ„ط§ط³طھط¹ظ„ط§ظ… (Query Parameters)
+    const { search, warehouseId, status } = req.query;
+   
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… SQL ط£ط³ط§ط³ظٹ ظ…ط¹ ط§ظ„ط±ط¨ط· ط¨ط¬ط¯ظˆظ„ warehouses
+    let query = `
+        SELECT 
+            l.id, l.code, l.rack, l.aisle, l.level, l.capacity, l.status,
+            l.warehouse_id, 
+            w.name AS warehouse_name, 
+            w.code AS warehouse_code
+        FROM locations l
+        JOIN warehouses w ON l.warehouse_id = w.id
+        WHERE 1=1
+    `;
+    const params = [];
+
+    // 3. طھط·ط¨ظٹظ‚ ط´ط±ظˆط· ط§ظ„طھطµظپظٹط© ط¯ظٹظ†ط§ظ…ظٹظƒظٹط§ظ‹
+    
+    // ط§ظ„طھطµظپظٹط© ط¨ظ…ط¹ط±ظپ ط§ظ„ظ…ط³طھظˆط¯ط¹
+    if (warehouseId) {
+        query += ` AND l.warehouse_id = ?`;
+        params.push(warehouseId);
+    }
+
+    // ط§ظ„طھطµظپظٹط© ط¨ط§ظ„ط­ط§ظ„ط©
+    if (status) {
+        query += ` AND l.status = ?`;
+        params.push(status);
+    }
+    
+    // ط§ظ„ط¨ط­ط« ط¨ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹ ط£ظˆ ط§ظ„ط±ظپ ط£ظˆ ط§ظ„ظ…ظ…ط± ط£ظˆ ط§ظ„ظ…ط³طھظˆظ‰
+    if (search) {
+        query += ` AND (l.code LIKE ? OR l.rack LIKE ? OR l.aisle LIKE ? OR l.level LIKE ?)`;
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    // ط§ظ„طھط±طھظٹط¨ ط§ظ„ط§ظپطھط±ط§ط¶ظٹ
+    query += ` ORDER BY l.code ASC;`;
+
+    // 4. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ… 
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Error fetching locations:', err);
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ظˆط§ظ‚ط¹ ظ…ظ† ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' 
+            });
+        }
+      
+        // 5. ط¥ط±ط³ط§ظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ
+        res.status(200).json({ 
+            success: true, 
+            locations: results // ط¥ط±ط¬ط§ط¹ ظ…طµظپظˆظپط© ط§ظ„ظ…ظˆط§ظ‚ط¹
+        });
+    });
+});
+// POST /api/locations - ط¥ط¶ط§ظپط© ظ…ظˆظ‚ط¹ ط¬ط¯ظٹط¯
+app.post('/api/locations', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨
+    const { code, warehouseId, rack, aisle, level, capacity, status } = req.body;
+
+    // 2. ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ ظ…ظ† طµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+    if (!code || !warehouseId) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط§ظ„ط±ط¬ط§ط، طھظˆظپظٹط± ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹ ظˆظ…ط¹ط±ظپ ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„طھط§ط¨ط¹.' 
+        });
+    }
+
+    // 3. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† طھظƒط±ط§ط± ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹ (UNIQUE KEY: warehouse_id, code)
+    const checkQuery = 'SELECT id FROM locations WHERE warehouse_id = ? AND code = ?';
+    db.query(checkQuery, [warehouseId, code], (err, results) => {
+        if (err) {
+            console.error('Database error during location code check:', err);
+            return res.status(500).json({ success: false, message: 'ط®ط·ط£ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ ط£ط«ظ†ط§ط، ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹.' });
+        }
+
+        if (results.length > 0) {
+            return res.status(409).json({ success: false, message: `ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹ "${code}" ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„ ظپظٹ ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„ظ…ط­ط¯ط¯.` });
+        }
+                
+        // 4. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط¥ط¯ط±ط§ط¬ (INSERT)
+        const insertQuery = `
+            INSERT INTO locations 
+            (code, warehouse_id, rack, aisle, level, capacity, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?);
+        `;
+        
+        // 5. طھط±طھظٹط¨ ط§ظ„ظ‚ظٹظ… ط§ظ„ظ…طھط؛ظٹط±ط©
+        const values = [ 
+            code, 
+            warehouseId, 
+            rack || null, 
+            aisle || null, 
+            level || null, 
+            capacity || null, 
+            status || 'ط­ط±' 
+        ];
+
+        // 6. طھظ†ظپظٹط° ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط¥ط¯ط±ط§ط¬
+        db.query(insertQuery, values, (err, result) => {
+            if (err) {
+                console.error('Database error on location insertion:', err);
+                
+                // ط§ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط®ط·ط£ ط§ظ„ظ…ظپطھط§ط­ ط§ظ„ط®ط§ط±ط¬ظٹ (ط¥ط°ط§ ظƒط§ظ† warehouseId ط؛ظٹط± ظ…ظˆط¬ظˆط¯)
+                if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_NO_REFERENCED_ROW') {
+                    return res.status(400).json({ success: false, message: 'ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„طھط§ط¨ط¹ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+                }
+
+                return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط­ظپط¸ ط§ظ„ظ…ظˆظ‚ط¹ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+            }
+
+            // 7. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­
+            res.status(201).json({ 
+                success: true, 
+                message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ظ…ظˆظ‚ط¹ ط¨ظ†ط¬ط§ط­.',
+                id: result.insertId
+            });
+        });
+    });
+});
+// PUT /api/locations/:id - طھط¹ط¯ظٹظ„ ط¨ظٹط§ظ†ط§طھ ظ…ظˆظ‚ط¹ ظ…ظˆط¬ظˆط¯
+app.put('/api/locations/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط±
+    const locationId = req.params.id;
+
+    // 2. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظڈط¹ط¯ظ„ط© ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨
+    const { code, warehouseId, rack, aisle, level, capacity, status } = req.body;
+
+    // 3. ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ ظ…ظ† ط§ظ„ظ€ ID ظˆطµط­ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+    if (!locationId || !code || !warehouseId) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'ط¨ظٹط§ظ†ط§طھ ط§ظ„طھط­ط¯ظٹط« ط؛ظٹط± ظƒط§ظ…ظ„ط© (ط§ظ„ظ…ط¹ط±ظپطŒ ط§ظ„ط±ظ…ط²طŒ ظˆظ…ط¹ط±ظپ ط§ظ„ظ…ط³طھظˆط¯ط¹ ظ…ط·ظ„ظˆط¨ط§ظ†).' 
+        });
+    }
+
+    // 4. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„طھط­ط¯ظٹط« (UPDATE)
+    const updateQuery = `
+        UPDATE locations 
+        SET 
+            code = ?, 
+            warehouse_id = ?, 
+            rack = ?, 
+            aisle = ?, 
+            level = ?, 
+            capacity = ?, 
+            status = ?
+        WHERE id = ? 
+    `;
+    
+    // 5. طھط±طھظٹط¨ ط§ظ„ظ‚ظٹظ… ط§ظ„ظ…طھط؛ظٹط±ط©
+    const values = [
+        code, 
+        warehouseId, 
+        rack || null, 
+        aisle || null, 
+        level || null, 
+        capacity || null, 
+        status || 'ط­ط±',
+        locationId // ط§ظ„ظ€ ID ظٹظˆط¶ط¹ ظپظٹ ط§ظ„ظ†ظ‡ط§ظٹط© ظ„ظ„ط§ط³طھط®ط¯ط§ظ… ظپظٹ ط´ط±ط· WHERE
+    ];
+
+    // 6. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ…
+    db.query(updateQuery, values, (err, result) => {
+        if (err) {
+            console.error('Database error on location update:', err);
+            
+            // ط§ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط®ط·ط£ طھظƒط±ط§ط± ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹ ط¶ظ…ظ† ظ†ظپط³ ط§ظ„ظ…ط³طھظˆط¯ط¹
+            if (err.code === 'ER_DUP_ENTRY') {
+                 return res.status(409).json({ success: false, message: `ط±ظ…ط² ط§ظ„ظ…ظˆظ‚ط¹ "${code}" ظ…ظڈط³طھط®ط¯ظ… ط¨ط§ظ„ظپط¹ظ„ ظپظٹ ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„ظ…ط­ط¯ط¯.` });
+            }
+            // ط§ظ„طھط¹ط§ظ…ظ„ ظ…ط¹ ط®ط·ط£ ط§ظ„ظ…ظپطھط§ط­ ط§ظ„ط®ط§ط±ط¬ظٹ (ط¥ط°ط§ ظƒط§ظ† warehouseId ط؛ظٹط± ظ…ظˆط¬ظˆط¯)
+            if (err.code === 'ER_NO_REFERENCED_ROW_2' || err.code === 'ER_NO_REFERENCED_ROW') {
+                return res.status(400).json({ success: false, message: 'ط§ظ„ظ…ط³طھظˆط¯ط¹ ط§ظ„طھط§ط¨ط¹ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            }
+
+            return res.status(500).json({ 
+                success: false, 
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، طھط­ط¯ظٹط« ط§ظ„ظ…ظˆظ‚ط¹.'
+            });
+        }
+
+        // 7. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ ظƒط§ظ† ظ‚ط¯ طھظ… طھط¹ط¯ظٹظ„ ط£ظٹ طµظپ 
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆظ‚ط¹ ط§ظ„ظ…ط·ظ„ظˆط¨ طھط¹ط¯ظٹظ„ظ‡ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 8. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­
+        res.status(200).json({ 
+            success: true, 
+            message: `طھظ… طھط­ط¯ظٹط« ط§ظ„ظ…ظˆظ‚ط¹ ID ${locationId} ط¨ظ†ط¬ط§ط­.`
+        });
+    });
+});
+// DELETE /api/locations/:id - ط­ط°ظپ ظ…ظˆظ‚ط¹
+app.delete('/api/locations/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ظ€ ID ظ…ظ† ط§ظ„ظ…ط³ط§ط±
+    const locationId = req.params.id;
+
+    // 2. ط¨ظ†ط§ط، ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط­ط°ظپ (DELETE)
+    const deleteQuery = `
+        DELETE FROM locations 
+        WHERE id = ?
+    `;
+
+    // 3. طھظ†ظپظٹط° ط§ظ„ط§ط³طھط¹ظ„ط§ظ…
+    db.query(deleteQuery, [locationId], (err, result) => {
+        if (err) {
+            console.error('Database error on location deletion:', err);
+            
+            // ظپظٹ ط­ط§ظ„ط© ظˆط¬ظˆط¯ ط®ط·ط£ ط؛ظٹط± ظ…طھظˆظ‚ط¹ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ
+            // ظ…ظ„ط§ط­ط¸ط©: ظ…ظ† ط§ظ„ظ…ظپطھط±ط¶ ط£ظ„ط§ ظٹظƒظˆظ† ظ‡ظ†ط§ظƒ ط®ط·ط£ ظ…ظپطھط§ط­ ط®ط§ط±ط¬ظٹ ظ‡ظ†ط§ ظ…ط§ ظ„ظ… ظٹطھظ… ط±ط¨ط· ط§ظ„ظ…ظˆظ‚ط¹ ط¨ط¬ط¯ظˆظ„ ط«ط§ظ„ط«.
+            return res.status(500).json({
+                success: false,
+                message: 'ظپط´ظ„ ط®ط§ط¯ظ… ط¯ط§ط®ظ„ظٹ ط£ط«ظ†ط§ط، ط­ط°ظپ ط§ظ„ظ…ظˆظ‚ط¹.'
+            });
+        }
+
+        // 4. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ…ط§ ط¥ط°ط§ ظƒط§ظ† ظ‚ط¯ طھظ… ط­ط°ظپ ط£ظٹ طµظپ
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆظ‚ط¹ ط§ظ„ظ…ط·ظ„ظˆط¨ ط­ط°ظپظ‡ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        // 5. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­
+        res.status(200).json({
+            success: true,
+            message: `طھظ… ط­ط°ظپ ط§ظ„ظ…ظˆظ‚ط¹ ID ${locationId} ط¨ظ†ط¬ط§ط­.`
+        });
+    });
+});
+
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظƒظˆط¯ ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// GET /api/suppliers/:id/history - ط¬ظ„ط¨ طھط§ط±ظٹط® ط§ظ„ظ…ظˆط±ط¯ ظˆطھظپط§طµظٹظ„ ط§ظ„طھط¹ط§ظ…ظ„ط§طھ
+app.get('/api/suppliers/:id/history', (req, res) => {
+    // ظ†ط³طھط®ط¯ظ… supplier_id ط­ط³ط¨ ط¨ظ†ظٹط© ط§ظ„ط¬ط¯ظˆظ„
+    const supplierId = req.params.id;
+
+    // 1. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ظˆط¬ظˆط¯ ط§ظ„ظ…ط¹ط±ظپ
+    if (!supplierId) {
+        return res.status(400).json({ success: false, message: 'ظ„ظ… ظٹطھظ… طھط­ط¯ظٹط¯ ظ…ط¹ط±ظپ ط§ظ„ظ…ظˆط±ط¯.' });
+    }
+
+    // 2. ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط£ظˆظ„: ط¬ظ„ط¨ ظ…ط¹ظ„ظˆظ…ط§طھ ط§ظ„ظ…ظˆط±ط¯ ظˆط§ظ„ط¥ط­طµط§ط¦ظٹط§طھ ط§ظ„ظ…ظ„ط®طµط©
+    // ظ†ط³طھط®ط¯ظ… ط§ظ„ط­ظ‚ظˆظ„ transactions ظˆ total_value ط§ظ„ظ…ظˆط¬ظˆط¯ط© ط¨ط§ظ„ظپط¹ظ„ ظپظٹ ط¬ط¯ظˆظ„ suppliers (ظپظٹ ط­ط§ظ„ طھظ… طھط­ط¯ظٹط«ظ‡ط§ ظ…ظ† ظ‚ط¨ظ„ ط§ظ„ظ†ط¸ط§ظ…)
+    // ط£ظˆ ظ†ط³طھط®ط¯ظ… JOIN ظ„ط­ط³ط§ط¨ظ‡ط§ ظ…ط¨ط§ط´ط±ط©ظ‹. ط³ظ†ط³طھط®ط¯ظ… JOIN ظ„ظ„ط­ط³ط§ط¨ ظپظٹ ط§ظ„ظˆظ‚طھ ط§ظ„ظپط¹ظ„ظٹ ظˆط¶ظ…ط§ظ† ط§ظ„ط¯ظ‚ط©.
+    const summaryQuery = `
+        SELECT 
+            s.name,
+            COUNT(p.id) AS total_transactions,
+            IFNULL(SUM(p.quantity * p.unit_price), 0) AS total_value,
+            MAX(p.transaction_date) AS last_purchase
+        FROM suppliers s
+        LEFT JOIN purchases p ON s.supplier_id = p.supplier_id -- ط§ظ„ط±ط¨ط· ط¨ظ€ supplier_id
+        WHERE s.supplier_id = ?
+        GROUP BY s.supplier_id, s.name;
+    `;
+
+    db.query(summaryQuery, [supplierId], (err, summaryResults) => {
+        if (err) {
+            console.error('Database error during supplier history summary fetch:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¬ظ„ط¨ ظ…ظ„ط®طµ طھط§ط±ظٹط® ط§ظ„ظ…ظˆط±ط¯.' });
+        }
+
+        if (summaryResults.length === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆط±ط¯ ط§ظ„ظ…ط·ظ„ظˆط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+        
+        const summary = summaryResults[0];
+        
+        // 3. ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ط§ظ„ط«ط§ظ†ظٹ: ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط§ظ„طھط¹ط§ظ…ظ„ط§طھ
+        const transactionsQuery = `
+            SELECT
+                DATE_FORMAT(transaction_date, '%Y-%m-%d') AS date,
+                product_name AS product,
+                quantity,
+                unit_price,
+                (quantity * unit_price) AS total,
+                YEAR(transaction_date) AS year,
+                notes
+            FROM purchases
+            WHERE supplier_id = ?
+            ORDER BY transaction_date DESC;
+        `;
+
+        db.query(transactionsQuery, [supplierId], (err, transactionsResults) => {
+            if (err) {
+                console.error('Database error during supplier transactions fetch:', err);
+                return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط§ظ„طھط¹ط§ظ…ظ„ط§طھ.' });
+            }
+
+            // 4. طھط¬ظ…ظٹط¹ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظˆط¥ط±ط³ط§ظ„ظ‡ط§
+            const lastPurchaseDate = summary.last_purchase ? new Date(summary.last_purchase).toISOString().substring(0, 10) : '-';
+            
+            // ط­ط³ط§ط¨ ظ…طھظˆط³ط· ظ‚ظٹظ…ط© ط§ظ„طھط¹ط§ظ…ظ„
+            const avgTransaction = summary.total_transactions > 0 
+                ? (summary.total_value / summary.total_transactions) 
+                : 0;
+            
+            const historyData = {
+                name: summary.name,
+                total_transactions: parseInt(summary.total_transactions),
+                total_value: parseFloat(summary.total_value),
+                last_purchase: lastPurchaseDate,
+                avg_transaction_value: parseFloat(avgTransaction),
+                transactions: transactionsResults
+            };
+
+            res.status(200).json({ 
+                success: true, 
+                history: historyData 
+            });
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظƒظˆط¯ ط¥ظ„ظ‰ ظ…ظ„ظپ app.js ظپظٹ ظ‚ط³ظ… ظ…ط³ط§ط±ط§طھ API
+
+// POST /api/purchases - طھط³ط¬ظٹظ„ ط¹ظ…ظ„ظٹط© ط´ط±ط§ط، ط¬ط¯ظٹط¯ط©
+app.post('/api/purchases', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨
+    const { 
+        supplier_id, 
+        transaction_date, 
+        product_name, 
+        quantity, 
+        unit_price, 
+        notes 
+    } = req.body;
+
+    // 2. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط£ط³ط§ط³ظٹط©
+    if (!supplier_id || !transaction_date || !product_name || !quantity || !unit_price) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، طھط²ظˆظٹط¯ ط¬ظ…ظٹط¹ ط§ظ„ط­ظ‚ظˆظ„ ط§ظ„ظ…ط·ظ„ظˆط¨ط© (ط§ظ„ظ…ظˆط±ط¯طŒ ط§ظ„طھط§ط±ظٹط®طŒ ط§ظ„ظ…ظ†طھط¬طŒ ط§ظ„ظƒظ…ظٹط©طŒ ط§ظ„ط³ط¹ط±).' });
+    }
+
+    // 3. ط­ط³ط§ط¨ ظ‚ظٹظ…ط© ط§ظ„طھط¹ط§ظ…ظ„
+    const purchaseValue = parseFloat(quantity) * parseFloat(unit_price);
+
+    // 4. ط¬ظ…ظ„ط© SQL ظ„ظ„ط¥ط¯ط±ط§ط¬ ظپظٹ ط¬ط¯ظˆظ„ purchases
+    const insertPurchaseSql = `
+        INSERT INTO purchases 
+        (supplier_id, transaction_date, product_name, quantity, unit_price, notes) 
+        VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const insertValues = [supplier_id, transaction_date, product_name, quantity, unit_price, notes];
+
+    // 5. طھظ†ظپظٹط° ط¥ط¯ط±ط§ط¬ ط§ظ„طھط¹ط§ظ…ظ„
+    db.query(insertPurchaseSql, insertValues, (err, result) => {
+        if (err) {
+            console.error('Database error during purchase insert:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¥ط¯ط±ط§ط¬ ط§ظ„طھط¹ط§ظ…ظ„ ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        // 6. ط¬ظ…ظ„ط© SQL ظ„ظ„طھط­ط¯ظٹط« ظپظٹ ط¬ط¯ظˆظ„ suppliers (طھط­ط¯ظٹط« ط§ظ„ط¥ط­طµط§ط¦ظٹط§طھ)
+        const updateSupplierSql = `
+            UPDATE suppliers 
+            SET 
+                transactions = transactions + 1,
+                total_value = total_value + ? 
+            WHERE supplier_id = ?
+        `;
+        const updateValues = [purchaseValue, supplier_id];
+
+        // 7. طھظ†ظپظٹط° طھط­ط¯ظٹط« ط§ظ„ظ…ظˆط±ط¯
+        db.query(updateSupplierSql, updateValues, (err, updateResult) => {
+            if (err) {
+                // ظ…ظ„ط§ط­ط¸ط©: ظپظٹ ط¨ظٹط¦ط© ط¥ظ†طھط§ط¬ ط­ظ‚ظٹظ‚ظٹط©طŒ ط³طھط­طھط§ط¬ ط¥ظ„ظ‰ "ط§ظ„طھط±ط§ط¬ط¹" (Rollback) ط¹ظ† ط§ظ„ط¥ط¯ط±ط§ط¬ ط¥ط°ط§ ظپط´ظ„ ط§ظ„طھط­ط¯ظٹط«.
+                console.error('Database error during supplier statistics update:', err);
+                return res.status(500).json({ success: false, message: 'طھظ… ط¥ط¯ط±ط§ط¬ ط§ظ„طھط¹ط§ظ…ظ„طŒ ظ„ظƒظ† ظپط´ظ„ طھط­ط¯ظٹط« ط¥ط­طµط§ط¦ظٹط§طھ ط§ظ„ظ…ظˆط±ط¯.' });
+            }
+
+            if (updateResult.affectedRows === 0) {
+                 // ط¥ط°ط§ ظ„ظ… ظٹطھط£ط«ط± ط£ظٹ طµظپطŒ ظپظ‡ط°ط§ ظٹط¹ظ†ظٹ ط£ظ† ط§ظ„ظ…ظˆط±ط¯ ظ„ظ… ظٹط¹ط¯ ظ…ظˆط¬ظˆط¯ط§ظ‹طŒ ظˆظ‡ط°ط§ ط®ط·ط£ ظƒط¨ظٹط±.
+                 return res.status(404).json({ success: false, message: 'ظپط´ظ„ طھط­ط¯ظٹط« ط§ظ„ط¥ط­طµط§ط¦ظٹط§طھطŒ ط±ط¨ظ…ط§ ط§ظ„ظ…ظˆط±ط¯ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            }
+
+            // 8. ط¥ط±ط³ط§ظ„ ط§ط³طھط¬ط§ط¨ط© ط§ظ„ظ†ط¬ط§ط­ ط§ظ„ظ†ظ‡ط§ط¦ظٹط©
+            res.json({ 
+                success: true, 
+                message: 'طھظ… طھط³ط¬ظٹظ„ ط¹ظ…ظ„ظٹط© ط§ظ„ط´ط±ط§ط، ظˆطھط­ط¯ظٹط« ط¥ط­طµط§ط¦ظٹط§طھ ط§ظ„ظ…ظˆط±ط¯ ط¨ظ†ط¬ط§ط­.',
+                purchase_id: result.insertId 
+            });
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js ظپظٹ ظ‚ط³ظ… ظ…ط³ط§ط±ط§طھ API
+
+// GET /api/inventory/items - ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ظ…ط®ط²ظˆظ† ط¨ط§ظ„طھظپط§طµظٹظ„
+app.get('/api/inventory/items', (req, res) => {
+    // ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ظٹط³طھط®ط¯ظ… LEFT JOIN ظ„ط¶ظ…ط§ظ† ط¬ظ„ط¨ ط§ظ„ظ…ط§ط¯ط© ط­طھظ‰ ظ„ظˆ ظ„ظ… ظٹظƒظ† ظ„ظ‡ط§ ظ…ظˆظ‚ط¹ ظ…ط­ط¯ط¯
+    const sql = `
+        SELECT 
+            i.item_id, 
+            i.item_code, 
+            i.item_name, 
+            i.current_qty, 
+            i.unit,
+            i.min_stock, 
+            i.images,
+            w.name AS warehouse_name,
+            l.rack,
+            l.code AS location_code
+        FROM inventory_items i
+        LEFT JOIN locations l ON i.location_id = l.id
+        LEFT JOIN warehouses w ON l.warehouse_id = w.id
+        ORDER BY i.item_name ASC;
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) {
+            console.error('Database error fetching inventory items:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¬ظ„ط¨ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط®ط²ظˆظ†.' });
+        }
+        
+        // طھط¹ط¯ظٹظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ‚ط¨ظ„ ط¥ط±ط³ط§ظ„ظ‡ط§ ظ„طھطھظˆط§ظپظ‚ ظ…ط¹ ط§ظ„ظˆط§ط¬ظ‡ط© ط§ظ„ط£ظ…ط§ظ…ظٹط© (images ط¹ط¨ط§ط±ط© ط¹ظ† ظ…طµظپظˆظپط©)
+        const items = results.map(item => ({
+            ...item,
+            // Images ظ…ط®ط²ظ†ط© ظƒظ€ JSON string ظپظٹ ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھطŒ ظٹط¬ط¨ طھط­ظˆظٹظ„ظ‡ط§ ط¥ظ„ظ‰ ظ…طµظپظˆظپط©
+            images: item.images ? JSON.parse(item.images) : []
+        }));
+
+        res.json({ success: true, items });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/inventory/receive - طھط³ط¬ظٹظ„ ط§ط³طھظ„ط§ظ…/ط¥ط¶ط§ظپط© ظƒظ…ظٹط© ظ…ط§ط¯ط© ظ…ظˆط¬ظˆط¯ط©
+app.post('/api/inventory/receive', (req, res) => {
+    // ظٹطھظˆظ‚ط¹ item_idطŒ ط§ظ„ظƒظ…ظٹط© qtyطŒ ظˆ reference (ظ…ط±ط¬ط¹ ط§ظ„ظپط§طھظˆط±ط©/ط§ظ„ط³ظ†ط¯)
+    const { item_id, qty, reference, user, attachment_paths } = req.body;
+
+    // ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ
+    if (!item_id || !qty || parseFloat(qty) <= 0) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، طھط²ظˆظٹط¯ ظ…ط¹ط±ظپ ط§ظ„ظ…ط§ط¯ط© item_id ظˆط§ظ„ظƒظ…ظٹط© qty ط§ظ„ظ…ظˆط¬ط¨ط©.' });
+    }
+
+    const quantity = parseFloat(qty);
+    const itemID = parseInt(item_id);
+
+    // ط¨ط¯ط، ط§ظ„ظ…ط¹ط§ظ…ظ„ط© ظ„ط¶ظ…ط§ظ† طھظ†ظپظٹط° ط§ظ„طھط­ط¯ظٹط« ظˆط§ظ„طھط³ط¬ظٹظ„ ظ…ط¹ط§ظ‹
+    db.beginTransaction(err => {
+        if (err) {
+            console.error('Transaction start error:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¨ط¯ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        // 1. طھط­ط¯ظٹط« ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ† (inventory_items)
+        const updateItemSql = `
+            UPDATE inventory_items
+            SET current_qty = current_qty + ?
+            WHERE item_id = ?;
+        `;
+        
+        db.query(updateItemSql, [quantity, itemID], (err, result) => {
+            if (err) {
+                // ط¥ط°ط§ ظپط´ظ„ طھط­ط¯ظٹط« ط§ظ„ظ…ط®ط²ظˆظ†طŒ ظ†ظ„ط؛ظٹ ط§ظ„ط¹ظ…ظ„ظٹط© ط¨ط§ظ„ظƒط§ظ…ظ„
+                return db.rollback(() => {
+                    console.error('Error updating inventory quantity:', err);
+                    res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ†.' });
+                });
+            }
+
+            if (result.affectedRows === 0) {
+                 return db.rollback(() => {
+                    res.status(404).json({ success: false, message: 'ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط© ظپظٹ ط§ظ„ظ…ط®ط²ظˆظ† (item_id ط؛ظٹط± طµط­ظٹط­).' });
+                });
+            }
+            
+            // 2. طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ظپظٹ transaction_log
+            const insertTransactionSql = `
+                INSERT INTO transaction_log
+                (item_id, type, qty_change, reference, user, attachment_paths)
+                VALUES (?, 'ط§ط³طھظ„ط§ظ…', ?, ?, ?, ?);
+            `;
+            const logValues = [
+                itemID, 
+                quantity, 
+                reference || 'ط§ط³طھظ„ط§ظ… ط¯ط§ط®ظ„ظٹ', 
+                user || 'ظ…ط´ط±ظپ ط§ظ„ظ†ط¸ط§ظ…', 
+                attachment_paths || null
+            ];
+
+            db.query(insertTransactionSql, logValues, (err, transactionResult) => {
+                if (err) {
+                    // ط¥ط°ط§ ظپط´ظ„ ط§ظ„طھط³ط¬ظٹظ„طŒ ظ†ظ„ط؛ظٹ ط¹ظ…ظ„ظٹط© طھط­ط¯ظٹط« ط§ظ„ظ…ط®ط²ظˆظ†
+                    return db.rollback(() => {
+                        console.error('Error inserting transaction log:', err);
+                        res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ظپظٹ ط§ظ„ط³ط¬ظ„.' });
+                    });
+                }
+
+                // 3. طھط£ظƒظٹط¯ ط§ظ„ظ…ط¹ط§ظ…ظ„ط© (ط§ظ„ظ†ط¬ط§ط­ ط§ظ„ظ†ظ‡ط§ط¦ظٹ)
+                db.commit(err => {
+                    if (err) {
+                        return db.rollback(() => {
+                            console.error('Transaction commit error:', err);
+                            res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ظ†ظ‡ط§ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+                        });
+                    }
+                    res.json({ success: true, message: 'طھظ… ط§ط³طھظ„ط§ظ… ط§ظ„ظ…ط§ط¯ط© ظˆطھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ط¨ظ†ط¬ط§ط­.', transaction_id: transactionResult.insertId });
+                });
+            });
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/inventory/issue - طھط³ط¬ظٹظ„ طµط±ظپ ظ…ط§ط¯ط© ظ…ظ† ط§ظ„ظ…ط®ط²ظˆظ†
+app.post('/api/inventory/issue', (req, res) => {
+    // ظٹطھظˆظ‚ط¹ item_idطŒ ط§ظ„ظƒظ…ظٹط© qty (ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ظ…ظˆط¬ط¨ط©)طŒ ظˆ reference (ظ…ط±ط¬ط¹ ط§ظ„ط·ظ„ط¨/ط§ظ„ط³ظ†ط¯)
+    const { item_id, qty, reference, user, attachment_paths } = req.body;
+
+    // ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ: ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط§ظ„ظƒظ…ظٹط© ظ…ظˆط¬ط¨ط©
+    if (!item_id || !qty || parseFloat(qty) <= 0) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، طھط²ظˆظٹط¯ ظ…ط¹ط±ظپ ط§ظ„ظ…ط§ط¯ط© item_id ظˆط§ظ„ظƒظ…ظٹط© qty ط§ظ„ظ…ظˆط¬ط¨ط© ط§ظ„ظ…ط±ط§ط¯ طµط±ظپظ‡ط§.' });
+    }
+
+    const quantity = parseFloat(qty);
+    const itemID = parseInt(item_id);
+    const negativeQuantity = -quantity; // ط§ظ„ظƒظ…ظٹط© ط§ظ„ظ…ط³طھط®ط¯ظ…ط© ظپظٹ ط³ط¬ظ„ ط§ظ„ط­ط±ظƒط§طھ ظٹط¬ط¨ ط£ظ† طھظƒظˆظ† ط³ط§ظ„ط¨ط© ظ„ظ„طµط±ظپ
+
+    // 1. ط¨ط¯ط، ط§ظ„ظ…ط¹ط§ظ…ظ„ط© ظ„ط¶ظ…ط§ظ† طھظ†ظپظٹط° ط§ظ„طھط­ط¯ظٹط« ظˆط§ظ„طھط³ط¬ظٹظ„ ظ…ط¹ط§ظ‹
+    db.beginTransaction(err => {
+        if (err) {
+            console.error('Transaction start error:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¨ط¯ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        // 2. طھط­ط¯ظٹط« ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ† (inventory_items) ط¨ط¥ظ†ظ‚ط§طµ ط§ظ„ظƒظ…ظٹط©
+        const updateItemSql = `
+            UPDATE inventory_items
+            SET current_qty = current_qty - ?
+            WHERE item_id = ?;
+        `;
+        
+        db.query(updateItemSql, [quantity, itemID], (err, result) => {
+            if (err) {
+                // ط¥ط°ط§ ظپط´ظ„ طھط­ط¯ظٹط« ط§ظ„ظ…ط®ط²ظˆظ†طŒ ظ†ظ„ط؛ظٹ ط§ظ„ط¹ظ…ظ„ظٹط© ط¨ط§ظ„ظƒط§ظ…ظ„
+                return db.rollback(() => {
+                    console.error('Error updating inventory quantity for issue:', err);
+                    res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ†.' });
+                });
+            }
+
+            if (result.affectedRows === 0) {
+                 return db.rollback(() => {
+                    res.status(404).json({ success: false, message: 'ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط© ظپظٹ ط§ظ„ظ…ط®ط²ظˆظ† (item_id ط؛ظٹط± طµط­ظٹط­).' });
+                });
+            }
+            
+            // 3. طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ظپظٹ transaction_log ظƒظ€ "طµط±ظپ"
+            const insertTransactionSql = `
+                INSERT INTO transaction_log
+                (item_id, type, qty_change, reference, user, attachment_paths)
+                VALUES (?, 'طµط±ظپ', ?, ?, ?, ?);
+            `;
+            const logValues = [
+                itemID, 
+                negativeQuantity, // طھط³ط¬ظٹظ„ ط§ظ„ظ‚ظٹظ…ط© ط³ط§ظ„ط¨ط© ظ„طھظ…ط«ظ„ طµط±ظپط§ظ‹
+                reference || 'طµط±ظپ ط¯ط§ط®ظ„ظٹ', 
+                user || 'ظ…ط´ط±ظپ ط§ظ„ظ†ط¸ط§ظ…', 
+                attachment_paths || null
+            ];
+
+            db.query(insertTransactionSql, logValues, (err, transactionResult) => {
+                if (err) {
+                    // ط¥ط°ط§ ظپط´ظ„ ط§ظ„طھط³ط¬ظٹظ„طŒ ظ†ظ„ط؛ظٹ ط¹ظ…ظ„ظٹط© طھط­ط¯ظٹط« ط§ظ„ظ…ط®ط²ظˆظ†
+                    return db.rollback(() => {
+                        console.error('Error inserting transaction log for issue:', err);
+                        res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ظپظٹ ط§ظ„ط³ط¬ظ„.' });
+                    });
+                }
+
+                // 4. طھط£ظƒظٹط¯ ط§ظ„ظ…ط¹ط§ظ…ظ„ط© (ط§ظ„ظ†ط¬ط§ط­ ط§ظ„ظ†ظ‡ط§ط¦ظٹ)
+                db.commit(err => {
+                    if (err) {
+                        return db.rollback(() => {
+                            console.error('Transaction commit error:', err);
+                            res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ظ†ظ‡ط§ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+                        });
+                    }
+                    res.json({ success: true, message: 'طھظ… طµط±ظپ ط§ظ„ظ…ط§ط¯ط© ظˆطھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ط¨ظ†ط¬ط§ط­.', transaction_id: transactionResult.insertId });
+                });
+            });
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// GET /api/inventory/transactions - ط¬ظ„ط¨ ط³ط¬ظ„ ط§ظ„ط­ط±ظƒط§طھ ط§ظ„ظ…ظˆط­ط¯
+app.get('/api/inventory/transactions', (req, res) => {
+    // ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ظٹط±ط¨ط· transaction_log ط¨ظ€ inventory_items ظ„ط¬ظ„ط¨ ط§ط³ظ… ط§ظ„ظ…ط§ط¯ط©
+    const sql = `
+        SELECT 
+            t.transaction_id AS id, 
+            t.type, 
+            t.qty_change AS qty,
+            t.reference,
+            t.user,
+            t.created_at AS date,
+            i.item_name AS itemName,
+            i.item_code AS itemCode,
+            t.attachment_paths
+        FROM transaction_log t
+        JOIN inventory_items i ON t.item_id = i.item_id
+        ORDER BY t.created_at DESC; -- ط§ظ„ط£ط­ط¯ط« ط£ظˆظ„ط§ظ‹
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) {
+            console.error('Database error fetching transaction log:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¬ظ„ط¨ ط³ط¬ظ„ ط§ظ„ط­ط±ظƒط§طھ.' });
+        }
+        
+        // طھط¬ظ‡ظٹط² ط§ظ„ط¨ظٹط§ظ†ط§طھ ظ„طھطھظˆط§ظپظ‚ ظ…ط¹ ط§ظ„ظˆط§ط¬ظ‡ط© ط§ظ„ط£ظ…ط§ظ…ظٹط©
+        const transactions = results.map(t => ({
+            ...t,
+            // طھط­ظˆظٹظ„ ظ…ط³ط§ط±ط§طھ ط§ظ„ظ…ط±ظپظ‚ط§طھ ظ…ظ† ط³ظ„ط³ظ„ط© ظ†طµظٹط© ط¥ظ„ظ‰ ظ…طµظپظˆظپط© (ط¥ط°ط§ ظƒط§ظ†طھ ظ…ط®ط²ظ†ط© ظƒظ€ JSON string)
+            attachments: t.attachment_paths ? JSON.parse(t.attachment_paths) : []
+        }));
+
+        res.json({ success: true, transactions });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/requests - ط¥ظ†ط´ط§ط، ط·ظ„ط¨ ظ…ط§ط¯ط© ط¬ط¯ظٹط¯
+app.post('/api/requests', (req, res) => {
+    // ظٹطھظˆظ‚ط¹ item_idطŒ ط§ظ„ظƒظ…ظٹط© quantityطŒ ظˆ requested_by (ط§ط³ظ… ط§ظ„ط·ط§ظ„ط¨)
+    const { item_id, quantity, requested_by, justification } = req.body;
+
+    // ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ
+    if (!item_id || !quantity || parseFloat(quantity) <= 0 || !requested_by) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، طھط²ظˆظٹط¯ ظ…ط¹ط±ظپ ط§ظ„ظ…ط§ط¯ط© item_idطŒ ط§ظ„ظƒظ…ظٹط© ط§ظ„ظ…ط·ظ„ظˆط¨ط©طŒ ظˆط§ط³ظ… ط§ظ„ط·ط§ظ„ط¨.' });
+    }
+
+    const sql = `
+        INSERT INTO requests
+        (item_id, quantity, requested_by, justification, status)
+        VALUES (?, ?, ?, ?, 'ط¬ط¯ظٹط¯');
+    `;
+    const values = [
+        parseInt(item_id), 
+        parseFloat(quantity), 
+        requested_by, 
+        justification || null
+    ];
+
+    db.query(sql, values, (err, result) => {
+        if (err) {
+            console.error('Database error during request creation:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ظ†ط´ط§ط، ط·ظ„ط¨ ط§ظ„ظ…ط§ط¯ط©.' });
+        }
+        
+        res.json({ 
+            success: true, 
+            message: 'طھظ… ط¥ظ†ط´ط§ط، ط·ظ„ط¨ ط§ظ„ظ…ط§ط¯ط© ط¨ظ†ط¬ط§ط­ ط¨ط§ظ†طھط¸ط§ط± ط§ظ„ط§ط¹طھظ…ط§ط¯.', 
+            request_id: result.insertId 
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// GET /api/requests - ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط·ظ„ط¨ط§طھ ط§ظ„ظ…ظˆط§ط¯
+app.get('/api/requests', (req, res) => {
+    // ط§ظ„ط§ط³طھط¹ظ„ط§ظ… ظٹط±ط¨ط· ط¬ط¯ظˆظ„ requests ط¨ظ€ inventory_items ظ„ط¬ظ„ط¨ ط§ط³ظ… ط§ظ„ظ…ط§ط¯ط©
+    const sql = `
+        SELECT 
+            r.request_id AS id, 
+            r.quantity AS qty,
+            r.requested_by,
+            r.status,
+            r.justification,
+            r.created_at AS date,
+            i.item_name AS itemName,
+            i.item_code AS itemCode
+        FROM requests r
+        JOIN inventory_items i ON r.item_id = i.item_id
+        ORDER BY r.created_at DESC; -- ط§ظ„ط£ط­ط¯ط« ط£ظˆظ„ط§ظ‹
+    `;
+
+    db.query(sql, (err, results) => {
+        if (err) {
+            console.error('Database error fetching requests:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ط·ظ„ط¨ط§طھ.' });
+        }
+        
+        res.json({ success: true, requests: results });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/requests/approve/:id - ط§ط¹طھظ…ط§ط¯ ط§ظ„ط·ظ„ط¨ ظˆطھط­ط¯ظٹط« ط§ظ„ظ…ط®ط²ظˆظ†
+app.post('/api/requests/approve/:id', (req, res) => {
+    const requestID = parseInt(req.params.id);
+    const approvingUser = req.body.user || 'ظ…ط´ط±ظپ ط§ظ„ظ†ط¸ط§ظ…'; // ط§ط³ظ… ط§ظ„ظ…ط³طھط®ط¯ظ… ط§ظ„ط°ظٹ ط§ط¹طھظ…ط¯ ط§ظ„ط·ظ„ط¨
+
+    if (isNaN(requestID)) {
+        return res.status(400).json({ success: false, message: 'ظ…ط¹ط±ظپ ط§ظ„ط·ظ„ط¨ ط؛ظٹط± طµط­ظٹط­.' });
+    }
+
+    // 1. ط¨ط¯ط، ط§ظ„ظ…ط¹ط§ظ…ظ„ط© ظ„ط¶ظ…ط§ظ† طھظ†ظپظٹط° ط¬ظ…ظٹط¹ ط§ظ„ط®ط·ظˆط§طھ ظ…ط¹ط§ظ‹
+    db.beginTransaction(err => {
+        if (err) {
+            console.error('Transaction start error:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¨ط¯ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        // 2. ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط§ظ„ط·ظ„ط¨ ظˆط§ظ„ظ…ط®ط²ظˆظ† ط§ظ„ط­ط§ظ„ظٹ ظ„ظ„ظ…ط§ط¯ط©
+        const getRequestSql = `
+            SELECT 
+                r.item_id, 
+                r.quantity AS requested_qty, 
+                r.requested_by,
+                r.status,
+                i.item_name,
+                i.current_qty AS available_qty
+            FROM requests r
+            JOIN inventory_items i ON r.item_id = i.item_id
+            WHERE r.request_id = ? AND r.status = 'ط¬ط¯ظٹط¯';
+        `;
+
+        db.query(getRequestSql, [requestID], (err, results) => {
+            if (err) {
+                return db.rollback(() => {
+                    console.error('Error fetching request details:', err);
+                    res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط§ظ„ط·ظ„ط¨.' });
+                });
+            }
+
+            if (results.length === 0) {
+                return db.rollback(() => {
+                    res.status(404).json({ success: false, message: 'ط§ظ„ط·ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯ ط£ظˆ طھظ… ط§ط¹طھظ…ط§ط¯ظ‡ ظ…ط³ط¨ظ‚ط§ظ‹.' });
+                });
+            }
+
+            const request = results[0];
+            const itemID = request.item_id;
+            const requestedQty = parseFloat(request.requested_qty);
+            const availableQty = parseFloat(request.available_qty);
+            let issuedQty = requestedQty; // ط§ظ„ظƒظ…ظٹط© ط§ظ„طھظٹ ط³ظٹطھظ… طµط±ظپظ‡ط§
+
+            // ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ظ…ط®ط²ظˆظ† ط§ظ„ظƒط§ظپظٹ
+            if (availableQty < requestedQty) {
+                // ظپظٹ ط§ظ„ظˆط§ط¬ظ‡ط© ط§ظ„ط£ظ…ط§ظ…ظٹط©طŒ ظٹطھظ… ط¹ط±ط¶ طھط­ط°ظٹط± ظپظٹ ط­ط§ظ„ ط§ظ„ظ†ظ‚طµ. ظ‡ظ†ط§ ظ†ط¹طھظ…ط¯ طµط±ظپ ط§ظ„ظƒظ…ظٹط© ط§ظ„ظ…طھط§ط­ط© (طµظپط± ط¥ط°ط§ ظƒط§ظ†طھ ط³ط§ظ„ط¨ط©)
+                issuedQty = Math.max(0, availableQty); 
+
+                if (issuedQty === 0) {
+                     return db.rollback(() => {
+                        res.status(400).json({ success: false, message: 'ط§ظ„ظ…ط®ط²ظˆظ† ط§ظ„ظ…طھظˆظپط± طµظپط± ظˆظ„ط§ ظٹظ…ظƒظ† طµط±ظپ ط§ظ„ظ…ط§ط¯ط©.' });
+                    });
+                }
+            }
+
+            const negativeIssuedQty = -issuedQty; // ط§ظ„ظƒظ…ظٹط© ط³ط§ظ„ط¨ط© ظ„ظ€ transaction_log
+
+            // 3. طھط­ط¯ظٹط« ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ† (inventory_items) ط¨ط¥ظ†ظ‚ط§طµ ط§ظ„ظƒظ…ظٹط© ط§ظ„ظ…طµط±ظˆظپط©
+            const updateItemSql = `
+                UPDATE inventory_items
+                SET current_qty = current_qty + ?
+                WHERE item_id = ?;
+            `;
+            // ظ†ط³طھط®ط¯ظ… negativeIssuedQty ظ‡ظ†ط§ ظ„طھظ‚ظˆظ… ط¨ط¹ظ…ظ„ظٹط© ط·ط±ط­
+            db.query(updateItemSql, [negativeIssuedQty, itemID], (err, result) => {
+                if (err || result.affectedRows === 0) {
+                    return db.rollback(() => {
+                        console.error('Error updating inventory quantity for issue:', err);
+                        res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ† ط¨ط¹ط¯ ط§ظ„طµط±ظپ.' });
+                    });
+                }
+
+                // 4. طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ظپظٹ transaction_log ظƒظ€ "طµط±ظپ"
+                const insertTransactionSql = `
+                    INSERT INTO transaction_log
+                    (item_id, type, qty_change, reference, user)
+                    VALUES (?, 'طµط±ظپ', ?, ?, ?);
+                `;
+                const logValues = [
+                    itemID, 
+                    negativeIssuedQty,
+                    `ط·ظ„ط¨#${requestID} - ${request.requested_by}`, 
+                    approvingUser
+                ];
+
+                db.query(insertTransactionSql, logValues, (err, transactionResult) => {
+                    if (err) {
+                        return db.rollback(() => {
+                            console.error('Error inserting transaction log:', err);
+                            res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ظپظٹ ط§ظ„ط³ط¬ظ„.' });
+                        });
+                    }
+
+                    // 5. طھط­ط¯ظٹط« ط­ط§ظ„ط© ط§ظ„ط·ظ„ط¨ ط¥ظ„ظ‰ "طھظ… ط§ظ„طµط±ظپ"
+                    const updateRequestSql = `
+                        UPDATE requests
+                        SET status = 'طھظ… ط§ظ„طµط±ظپ'
+                        WHERE request_id = ?;
+                    `;
+                    db.query(updateRequestSql, [requestID], (err, updateResult) => {
+                        if (err || updateResult.affectedRows === 0) {
+                            return db.rollback(() => {
+                                console.error('Error updating request status:', err);
+                                res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ط­ط§ظ„ط© ط§ظ„ط·ظ„ط¨.' });
+                            });
+                        }
+
+                        // 6. طھط£ظƒظٹط¯ ط§ظ„ظ…ط¹ط§ظ…ظ„ط© (ط§ظ„ظ†ط¬ط§ط­ ط§ظ„ظ†ظ‡ط§ط¦ظٹ)
+                        db.commit(err => {
+                            if (err) {
+                                return db.rollback(() => {
+                                    console.error('Transaction commit error:', err);
+                                    res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ظ†ظ‡ط§ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+                                });
+                            }
+                            res.json({ 
+                                success: true, 
+                                message: `طھظ… ط§ط¹طھظ…ط§ط¯ ط§ظ„ط·ظ„ط¨ ظˆطµط±ظپ ظƒظ…ظٹط© ${issuedQty} ظ…ظ† ط§ظ„ظ…ط§ط¯ط© ${request.item_name}.`
+                            });
+                        });
+                    });
+                });
+            });
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/suppliers/edit/:id - طھط¹ط¯ظٹظ„ ط¨ظٹط§ظ†ط§طھ ظ…ظˆط±ط¯ ظ…ظˆط¬ظˆط¯
+app.post('/api/suppliers/edit/:id', (req, res) => {
+    // 1. ط§ط³طھط®ط±ط§ط¬ ظ…ط¹ط±ظپ ط§ظ„ظ…ظˆط±ط¯ ظ…ظ† ط§ظ„ط¨ط§ط±ط§ظ…طھط±ط§طھ
+    const supplierId = req.params.id;
+
+    // 2. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ‚ط§ط¨ظ„ط© ظ„ظ„طھط¹ط¯ظٹظ„ ظ…ظ† ط¬ط³ظ… ط§ظ„ط·ظ„ط¨ (req.body)
+    const { 
+        name, 
+        primary_phone, // ظٹطھظˆط§ظپظ‚ ظ…ط¹ 'phone' ظپظٹ ط§ظ„ظˆط§ط¬ظ‡ط© ط§ظ„ط£ظ…ط§ظ…ظٹط©
+        contact_person, // ظٹطھظˆط§ظپظ‚ ظ…ط¹ 'contact' ظپظٹ ط§ظ„ظˆط§ط¬ظ‡ط© ط§ظ„ط£ظ…ط§ظ…ظٹط©
+        address 
+        // ظٹظ…ظƒظ† ط¥ط¶ط§ظپط© ط§ظ„ظ…ط²ظٹط¯ ظ…ظ† ط§ظ„ط­ظ‚ظˆظ„ ظ‡ظ†ط§ ظ…ط«ظ„: email, specialization, ط¥ظ„ط®.
+    } = req.body;
+
+    // 3. ط¬ظ…ظ„ط© SQL ظ„طھط­ط¯ظٹط« ط§ظ„ط¨ظٹط§ظ†ط§طھ
+    const sql = `
+        UPDATE suppliers
+        SET 
+            name = COALESCE(?, name),
+            primary_phone = COALESCE(?, primary_phone),
+            contact_person = COALESCE(?, contact_person),
+            address = COALESCE(?, address),
+            updated_at = CURRENT_TIMESTAMP()
+        WHERE supplier_id = ?;
+    `;
+    
+    // 4. ط§ظ„ظ‚ظٹظ… ط§ظ„طھظٹ ط³ظٹطھظ… طھظ…ط±ظٹط±ظ‡ط§ ظ„ظ„ط§ط³طھط¹ظ„ط§ظ…
+    const values = [
+        name,
+        primary_phone,
+        contact_person,
+        address,
+        supplierId
+    ];
+
+    // 5. طھظ†ظپظٹط° ط§ط³طھط¹ظ„ط§ظ… ط§ظ„طھط­ط¯ظٹط«
+    db.query(sql, values, (err, result) => {
+        if (err) {
+            console.error('Database error during supplier update:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظˆط±ط¯.' });
+        }
+
+        // 6. ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط¹ط¯ط¯ ط§ظ„طµظپظˆظپ ط§ظ„طھظٹ طھط£ط«ط±طھ
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظˆط±ط¯ ط؛ظٹط± ظ…ظˆط¬ظˆط¯ ط£ظˆ ظ„ظ… طھطھط؛ظٹط± ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        res.json({ success: true, message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ظˆط±ط¯ ط¨ظ†ط¬ط§ط­.' });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/inventory/new - ط¥ط¶ط§ظپط© ظ…ط§ط¯ط© ط¬ط¯ظٹط¯ط© ط¨ط§ظ„ظƒط§ظ…ظ„ ط¥ظ„ظ‰ ط§ظ„ظ…ط®ط²ظˆظ†
+app.post('/api/inventory/new', (req, res) => {
+    // ظٹطھظˆظ‚ط¹: code, name, qty (ط§ظ„ظƒظ…ظٹط© ط§ظ„ط£ظˆظ„ظٹط©), min (ط§ظ„ط­ط¯ ط§ظ„ط£ط¯ظ†ظ‰), unit, images (JSON string), user (ط§ظ„ظ…ط´ط±ظپ)
+    const { 
+        code, 
+        name, 
+        qty, 
+        min, 
+        unit, 
+        images, // ظٹظپطھط±ط¶ ط£ظ† ط§ظ„طµظˆط± ظٹطھظ… ط¥ط±ط³ط§ظ„ظ‡ط§ ظƒط³ظ„ط³ظ„ط© ظ†طµظٹط© (JSON string) ظ„ظ…ط³ط§ط±ط§طھظ‡ط§ ط£ظˆ DataURLs
+        user 
+    } = req.body;
+
+    // ط§ظ„طھط­ظ‚ظ‚ ط§ظ„ط£ط³ط§ط³ظٹ
+    if (!name || !code || !unit) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط±ط¬ط§ط، طھط²ظˆظٹط¯ ظƒظˆط¯ ظˆط§ط³ظ… ظˆظˆط­ط¯ط© ط§ظ„ظ…ط§ط¯ط©.' });
+    }
+
+    const initialQty = parseFloat(qty) || 0.00;
+    const minStock = parseFloat(min) || 5.00;
+    const itemUser = user || 'ظ…ط´ط±ظپ ط§ظ„ظ†ط¸ط§ظ…';
+
+    // 1. ط¨ط¯ط، ط§ظ„ظ…ط¹ط§ظ…ظ„ط©
+    db.beginTransaction(err => {
+        if (err) {
+            console.error('Transaction start error:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ط¨ط¯ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+        }
+
+        // 2. ط¥ط¯ط±ط§ط¬ ط§ظ„ظ…ط§ط¯ط© ط§ظ„ط¬ط¯ظٹط¯ط© ظپظٹ inventory_items
+        const insertItemSql = `
+            INSERT INTO inventory_items
+            (item_code, item_name, unit, min_stock, current_qty, images, location_id)
+            VALUES (?, ?, ?, ?, ?, ?, NULL); -- ظٹطھظ… طھط¹ظٹظٹظ† location_id ط¹ظ„ظ‰ NULL ظ…ط¨ط¯ط¦ظٹط§ظ‹
+        `;
+        const itemValues = [
+            code, 
+            name, 
+            unit, 
+            minStock, 
+            initialQty, 
+            images || null
+        ];
+
+        db.query(insertItemSql, itemValues, (err, result) => {
+            if (err) {
+                // ط¥ط°ط§ ظƒط§ظ† ط§ظ„ط®ط·ط£ ط¨ط³ط¨ط¨ طھظƒط±ط§ط± ط§ظ„ظƒظˆط¯
+                if (err.code === 'ER_DUP_ENTRY') {
+                    return db.rollback(() => {
+                        res.status(409).json({ success: false, message: 'ط§ظ„ظƒظˆط¯ ط§ظ„ظ…ط¯ط®ظ„ ظ…ظˆط¬ظˆط¯ ظ…ط³ط¨ظ‚ط§ظ‹ ظ„ظ…ط§ط¯ط© ط£ط®ط±ظ‰.' });
+                    });
+                }
+                return db.rollback(() => {
+                    console.error('Error inserting new item:', err);
+                    res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ط¯ط±ط§ط¬ ط§ظ„ظ…ط§ط¯ط© ط§ظ„ط¬ط¯ظٹط¯ط©.' });
+                });
+            }
+
+            const newItemId = result.insertId;
+
+            // 3. ط¥ط°ط§ ظƒط§ظ†طھ ظ‡ظ†ط§ظƒ ظƒظ…ظٹط© ط£ظˆظ„ظٹط© (qty > 0)طŒ ظ†ط³ط¬ظ„ ط­ط±ظƒط© "ط§ط³طھظ„ط§ظ…"
+            if (initialQty > 0) {
+                const insertTransactionSql = `
+                    INSERT INTO transaction_log
+                    (item_id, type, qty_change, reference, user, attachment_paths)
+                    VALUES (?, 'ط§ط³طھظ„ط§ظ…', ?, ?, ?, ?);
+                `;
+                const logValues = [
+                    newItemId, 
+                    initialQty, 
+                    `ط§ط³طھظ„ط§ظ… ط£ظˆظ„ظٹ ط¹ظ†ط¯ ط§ظ„ط¥ط¶ط§ظپط©`, 
+                    itemUser, 
+                    images || null
+                ];
+
+                db.query(insertTransactionSql, logValues, (err, transactionResult) => {
+                    if (err) {
+                        return db.rollback(() => {
+                            console.error('Error inserting transaction log for new item:', err);
+                            res.status(500).json({ success: false, message: 'طھظ… ط¥ط¯ط±ط§ط¬ ط§ظ„ظ…ط§ط¯ط©طŒ ظ„ظƒظ† ظپط´ظ„ طھط³ط¬ظٹظ„ ط§ظ„ط­ط±ظƒط© ط§ظ„ط£ظˆظ„ظٹط©.' });
+                        });
+                    }
+
+                    // 4. طھط£ظƒظٹط¯ ط§ظ„ظ…ط¹ط§ظ…ظ„ط© (ط§ظ„ظ†ط¬ط§ط­ ط§ظ„ظ†ظ‡ط§ط¦ظٹ)
+                    db.commit(err => {
+                        if (err) {
+                            return db.rollback(() => {
+                                console.error('Transaction commit error:', err);
+                                res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ظ†ظ‡ط§ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+                            });
+                        }
+                        res.json({ 
+                            success: true, 
+                            message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ظ…ط§ط¯ط© ظˆطھط³ط¬ظٹظ„ ط§ظ„ط§ط³طھظ„ط§ظ… ط§ظ„ط£ظˆظ„ظٹ ط¨ظ†ط¬ط§ط­.', 
+                            item_id: newItemId 
+                        });
+                    });
+                });
+            } else {
+                // 4. ط¥ط°ط§ ظ„ظ… طھظƒظ† ظ‡ظ†ط§ظƒ ظƒظ…ظٹط© ط£ظˆظ„ظٹط©طŒ ظ†ط¤ظƒط¯ ط§ظ„ط¥ط¯ط±ط§ط¬ ظپظ‚ط·
+                db.commit(err => {
+                    if (err) {
+                        return db.rollback(() => {
+                            console.error('Transaction commit error:', err);
+                            res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¥ظ†ظ‡ط§ط، ط¹ظ…ظ„ظٹط© ظ‚ط§ط¹ط¯ط© ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+                        });
+                    }
+                    res.json({ 
+                        success: true, 
+                        message: 'طھظ… ط¥ط¶ط§ظپط© ط§ظ„ظ…ط§ط¯ط© ط¨ظ†ط¬ط§ط­ (ظƒظ…ظٹط© ط§ظ„ظ…ط®ط²ظˆظ† طµظپط±).', 
+                        item_id: newItemId 
+                    });
+                });
+            }
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// POST /api/inventory/edit/:id - ظ„طھط¹ط¯ظٹظ„ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ظˆطµظپظٹط© ظ„ظ„ظ…ط§ط¯ط© (ط§ظ„ط§ط³ظ…طŒ ط§ظ„ظƒظˆط¯طŒ ط§ظ„ط­ط¯ ط§ظ„ط£ط¯ظ†ظ‰طŒ ط§ظ„طµظˆط±)
+app.post('/api/inventory/edit/:id', (req, res) => {
+    const itemId = req.params.id;
+    const { 
+        code, 
+        name, 
+        min_stock, 
+        unit, 
+        location_id,
+        new_images // JSON string of new image paths/DataURLs
+    } = req.body;
+
+    if (!itemId) {
+        return res.status(400).json({ success: false, message: 'ظ…ط¹ط±ظپ ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± طµط­ظٹط­.' });
+    }
+
+    // 1. ط§ط³طھط®ط±ط§ط¬ ط§ظ„ط¨ظٹط§ظ†ط§طھ ط§ظ„ط­ط§ظ„ظٹط© ظ„ظ„ظ…ط§ط¯ط© ظ„ظ„طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„طµظˆط± ط§ظ„ظ‚ط¯ظٹظ…ط©
+    const getCurrentDataSql = 'SELECT images FROM inventory_items WHERE item_id = ?';
+    
+    db.query(getCurrentDataSql, [itemId], (err, currentResults) => {
+        if (err) {
+            console.error('Database error on fetching current item data:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¬ظ„ط¨ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط§ط¯ط© ط§ظ„ط­ط§ظ„ظٹط©.' });
+        }
+        
+        if (currentResults.length === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©.' });
+        }
+        
+        const currentItem = currentResults[0];
+        let existingImages = [];
+        
+        // ظ…ط­ط§ظˆظ„ط© طھط­ظ„ظٹظ„ ط§ظ„طµظˆط± ط§ظ„ظ‚ط¯ظٹظ…ط©
+        try {
+            if (currentItem.images) {
+                existingImages = JSON.parse(currentItem.images);
+            }
+        } catch (e) {
+            console.warn('Could not parse existing images JSON:', currentItem.images);
+            // ظ‚ط¯ ظ†ط­طھط§ط¬ ظ„ظ…ط¹ط§ظ„ط¬ط© ط§ظ„طµظˆط± ط§ظ„ظ‚ط¯ظٹظ…ط© ظپظٹ ط§ظ„ظˆط§ط¬ظ‡ط© ط§ظ„ط£ظ…ط§ظ…ظٹط© ط¥ط°ط§ ظƒط§ظ†طھ ظ…ط¹ط·ظˆط¨ط©
+        }
+        
+        // 2. ط¯ظ…ط¬ ط§ظ„طµظˆط± ط§ظ„ط¬ط¯ظٹط¯ط© ظ…ط¹ ط§ظ„ظ‚ط¯ظٹظ…ط©
+        let finalImages = existingImages;
+        if (new_images) {
+            try {
+                const newImagesArray = JSON.parse(new_images);
+                // ظٹطھظ… ط§ط³طھط¨ط¯ط§ظ„ ط§ظ„ظ‚ط§ط¦ظ…ط© ط¨ط§ظ„ط¬ط¯ظٹط¯ط© ظپظٹ ظ‡ط°ط§ ط§ظ„ط³ظٹظ†ط§ط±ظٹظˆ ظ„طھط¨ط³ظٹط· ط§ظ„ط¹ظ…ظ„ظٹط©
+                // ظپظٹ ط§ظ„طھط·ط¨ظٹظ‚ط§طھ ط§ظ„ط­ظ‚ظٹظ‚ظٹط©: ظٹطھظ… ط¯ظ…ط¬ ط£ظˆ طھط­ط¯ظٹط¯ ط§ظ„طµظˆط± ط§ظ„طھظٹ طھط¨ظ‚ظ‰
+                finalImages = newImagesArray; 
+            } catch (e) {
+                return res.status(400).json({ success: false, message: 'طµظٹط؛ط© JSON ظ„ظ…ط³ط§ط±ط§طھ ط§ظ„طµظˆط± ط§ظ„ط¬ط¯ظٹط¯ط© ط؛ظٹط± طµط§ظ„ط­ط©.' });
+            }
+        }
+        
+        const finalImagesJson = finalImages.length > 0 ? JSON.stringify(finalImages) : null;
+
+        // 3. ط¨ظ†ط§ط، ط¬ظ…ظ„ط© ط§ظ„طھط­ط¯ظٹط«
+        const updateSql = `
+            UPDATE inventory_items
+            SET 
+                item_code = COALESCE(?, item_code),
+                item_name = COALESCE(?, item_name),
+                min_stock = COALESCE(?, min_stock),
+                unit = COALESCE(?, unit),
+                location_id = ?,
+                images = ?
+            WHERE item_id = ?;
+        `;
+
+        const values = [
+            code,
+            name,
+            min_stock,
+            unit,
+            location_id || null, // ظٹظ…ظƒظ† ط£ظ† ظٹظƒظˆظ† NULL
+            finalImagesJson,
+            itemId
+        ];
+
+        // 4. طھظ†ظپظٹط° ط§ظ„طھط­ط¯ظٹط«
+        db.query(updateSql, values, (err, result) => {
+            if (err) {
+                console.error('Database error during item update:', err);
+                return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط§ط¯ط©.' });
+            }
+
+            if (result.affectedRows === 0) {
+                return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ط§ط¯ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط© ط£ظˆ ظ„ظ… طھطھط؛ظٹط± ط§ظ„ط¨ظٹط§ظ†ط§طھ.' });
+            }
+
+            res.json({ success: true, message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط§ط¯ط© ط¨ظ†ط¬ط§ط­.' });
+        });
+    });
+});
+// ظٹظڈط¶ط§ظپ ظ‡ط°ط§ ط§ظ„ظ…ط³ط§ط± ط¥ظ„ظ‰ ظ…ظ„ظپ app.js
+
+// GET /api/inventory/transactions/:id - ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط­ط±ظƒط© ظˆط§ط­ط¯ط©
+app.get('/api/inventory/transactions/:id', (req, res) => {
+    const transactionId = req.params.id;
+
+    // ط§ط³طھط¹ظ„ط§ظ… ظ„ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط§ظ„ط­ط±ظƒط© ظ…ط¹ ط§ط³ظ… ظˆظƒظˆط¯ ظˆظˆط­ط¯ط© ط§ظ„ظ…ط§ط¯ط©
+    const sql = `
+        SELECT 
+            t.transaction_id AS id, 
+            t.type, 
+            t.qty_change AS qty, 
+            t.reference, 
+            t.user, 
+            t.created_at AS date, 
+            t.attachment_paths,
+            i.item_name,
+            i.item_code,
+            i.unit
+        FROM transaction_log t
+        JOIN inventory_items i ON t.item_id = i.item_id
+        WHERE t.transaction_id = ?;
+    `;
+
+    db.query(sql, [transactionId], (err, results) => {
+        if (err) {
+            console.error('Database error fetching transaction details:', err);
+            return res.status(500).json({ success: false, message: 'ظپط´ظ„ ظپظٹ ط¬ظ„ط¨ طھظپط§طµظٹظ„ ط§ظ„ط­ط±ظƒط©.' });
+        }
+        
+        if (results.length === 0) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ط­ط±ظƒط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©.' });
+        }
+
+        // ط¥ط±ط¬ط§ط¹ ط§ظ„ظ†طھظٹط¬ط© ط§ظ„ط£ظˆظ„ظ‰ ظپظ‚ط·
+        res.json({ success: true, transaction: results[0] });
+    });
+});
+
+app.get('/api/dockmanager/dashboard', requireRoles(['dockmanager']), (req, res) => {
+    const session = req.authSession;
+    const slotsQuery = `
+        SELECT id, level_key, slot_code, slot_order, container_number, owner_name, container_type, notes, updated_at
+        FROM dock_slots
+        ORDER BY FIELD(level_key, 'upper', 'middle', 'lower'), slot_order ASC
+    `;
+
+    db.query(slotsQuery, (dockErr, slotResults) => {
+        if (dockErr) {
+            console.error('Error fetching dock manager dashboard:', dockErr);
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط±طµظٹظپ.' });
+        }
+
+        getCurrentUserByEmail(session.email, (userErr, user) => {
+            if (userErr) {
+                console.error('Error fetching dock manager user:', userErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط³طھط®ط¯ظ….' });
+            }
+
+            getDockDrivers((driversErr, drivers) => {
+                if (driversErr) {
+                    console.error('Error fetching dock drivers:', driversErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ظ‚ط§ط¦ظ…ط© ط§ظ„ط³ط§ط¦ظ‚ظٹظ†.' });
+                }
+
+                getActiveDockRequests((requestsErr, requests) => {
+                    if (requestsErr) {
+                        console.error('Error fetching dock requests:', requestsErr);
+                        return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط·ظ„ط¨ط§طھ ط§ظ„ظ†ظ‚ظ„.' });
+                    }
+
+                    const requestsBySlotId = requests.reduce((accumulator, request) => {
+                        accumulator[request.slot_id] = {
+                            id: request.request_id,
+                            containerNumber: request.container_number,
+                            status: request.status,
+                            driverId: request.driver_user_id,
+                            driverName: request.driver_name || request.driver_email || 'ط³ط§ط¦ظ‚',
+                            driverEmail: request.driver_email,
+                            responseNote: request.response_note,
+                            createdAt: request.created_at,
+                            respondedAt: request.responded_at
+                        };
+                        return accumulator;
+                    }, {});
+
+                    const occupiedCount = slotResults.filter((slot) => String(slot.container_number || '').trim()).length;
+                    const totalSlots = slotResults.length;
+                    const berthStatus = getDockBerthStatus(occupiedCount, totalSlots);
+                    const groupedSlots = DOCK_LEVELS.map((level) => ({
+                        key: level.key,
+                        label: level.label,
+                        hint: level.hint,
+                        slots: slotResults
+                            .filter((slot) => slot.level_key === level.key)
+                            .map((slot) => {
+                                const currentContainerNumber = String(slot.container_number || '').trim();
+                                const slotRequest = requestsBySlotId[slot.id] || null;
+                                const requestMatchesCurrentContainer = slotRequest
+                                    && String(slotRequest.containerNumber || '').trim()
+                                    && String(slotRequest.containerNumber || '').trim().toUpperCase() === currentContainerNumber.toUpperCase();
+
+                                return {
+                                    id: slot.id,
+                                    code: slot.slot_code,
+                                    order: slot.slot_order,
+                                    containerNumber: slot.container_number,
+                                    ownerName: slot.owner_name,
+                                    containerType: slot.container_type,
+                                    notes: slot.notes,
+                                    occupied: Boolean(currentContainerNumber),
+                                    updatedAt: slot.updated_at,
+                                    request: requestMatchesCurrentContainer ? slotRequest : null
+                                };
+                            })
+                    }));
+
+                    return res.status(200).json({
+                        success: true,
+                        manager: {
+                            name: String(user?.full_name || session.email || 'ظ…ط¯ظٹط± ط§ظ„ط±طµظٹظپ').trim(),
+                            email: session.email,
+                            role: session.role
+                        },
+                        summary: {
+                            occupiedCount,
+                            totalSlots,
+                            berthStatus
+                        },
+                        drivers: drivers.map((driver) => ({
+                            id: driver.user_id,
+                            name: driver.full_name || driver.email,
+                            email: driver.email
+                        })),
+                        levels: groupedSlots
+                    });
+                });
+            });
+        });
+    });
+});
+
+app.get('/api/dockmanager/completed-containers', requireRoles(['dockmanager']), (req, res) => {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ظٹظ†.' });
+        }
+
+        const query = `
+            SELECT
+                r.request_id,
+                r.container_number,
+                r.slot_code,
+                r.owner_name,
+                r.responded_at,
+                u.${userIdColumn} AS driver_id,
+                u.email AS driver_email,
+                u.full_name AS driver_name
+            FROM dock_delivery_requests r
+            LEFT JOIN Users u ON u.${userIdColumn} = r.driver_user_id
+            WHERE r.status = 'completed'
+            ORDER BY COALESCE(r.responded_at, r.created_at) DESC, r.request_id DESC
+        `;
+
+        db.query(query, (queryErr, results) => {
+            if (queryErr) {
+                console.error('Error fetching completed dock containers:', queryErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط§ظ„ط­ط§ظˆظٹط§طھ ط§ظ„ظ…ط³ظ„ظ…ط©.' });
+            }
+
+            return res.status(200).json({
+                success: true,
+                containers: results.map((row) => ({
+                    id: row.request_id,
+                    containerNumber: row.container_number,
+                    previousSlot: row.slot_code,
+                    ownerName: row.owner_name,
+                    driverName: row.driver_name || row.driver_email || 'ط³ط§ط¦ظ‚',
+                    completedAt: row.responded_at
+                }))
+            });
+        });
+    });
+});
+
+app.post('/api/dockmanager/containers', requireRoles(['dockmanager']), (req, res) => {
+    const levelKey = String(req.body.level || '').trim().toLowerCase();
+    const containerNumber = String(req.body.containerNumber || '').trim().toUpperCase();
+    const ownerName = String(req.body.ownerName || '').trim();
+    const containerType = String(req.body.containerType || '').trim() || null;
+    const notes = String(req.body.notes || '').trim() || null;
+    const levelMeta = getDockLevelMeta(levelKey);
+
+    if (!levelMeta || !containerNumber || !ownerName) {
+        return res.status(400).json({ success: false, message: 'ظٹط±ط¬ظ‰ ط§ط®طھظٹط§ط± ط§ظ„ظ…ط³طھظˆظ‰ ظˆط¥ط¯ط®ط§ظ„ ط±ظ‚ظ… ط§ظ„ط­ط§ظˆظٹط© ظˆط§ط³ظ… ط§ظ„ظ…ط§ظ„ظƒ.' });
+    }
+
+    const duplicateQuery = `
+        SELECT id, slot_code
+        FROM dock_slots
+        WHERE UPPER(container_number) = ?
+        LIMIT 1
+    `;
+
+    db.query(duplicateQuery, [containerNumber], (duplicateErr, duplicateResults) => {
+        if (duplicateErr) {
+            console.error('Error checking duplicate dock container:', duplicateErr);
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط±ظ‚ظ… ط§ظ„ط­ط§ظˆظٹط©.' });
+        }
+
+        if (duplicateResults.length > 0) {
+            return res.status(409).json({
+                success: false,
+                message: `ط§ظ„ط­ط§ظˆظٹط© ${containerNumber} ظ…ظˆط¬ظˆط¯ط© ط¨ط§ظ„ظپط¹ظ„ ظپظٹ ط§ظ„ط®ط§ظ†ط© ${duplicateResults[0].slot_code}.`
+            });
+        }
+
+        const availableSlotQuery = `
+            SELECT id, slot_code
+            FROM dock_slots
+            WHERE level_key = ?
+              AND (container_number IS NULL OR TRIM(container_number) = '')
+            ORDER BY slot_order ASC
+            LIMIT 1
+        `;
+
+        db.query(availableSlotQuery, [levelKey], (slotErr, slotResults) => {
+            if (slotErr) {
+                console.error('Error finding available dock slot:', slotErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ط®ط§ظ†ط© ظ…طھط§ط­ط©.' });
+            }
+
+            if (!slotResults.length) {
+                return res.status(409).json({
+                    success: false,
+                    message: `ظ„ط§ طھظˆط¬ط¯ ط®ط§ظ†ط§طھ ظپط§ط±ط؛ط© ط­ط§ظ„ظٹط§ظ‹ ظپظٹ ${levelMeta.label}.`
+                });
+            }
+
+            const slot = slotResults[0];
+            const updateSlotQuery = `
+                UPDATE dock_slots
+                SET container_number = ?, owner_name = ?, container_type = ?, notes = ?
+                WHERE id = ?
+            `;
+
+            db.query(updateSlotQuery, [containerNumber, ownerName, containerType, notes, slot.id], (updateErr) => {
+                if (updateErr) {
+                    console.error('Error assigning dock slot:', updateErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط³ط¬ظٹظ„ ط§ظ„ط­ط§ظˆظٹط© ظپظٹ ط§ظ„ط±طµظٹظپ.' });
+                }
+
+                return res.status(201).json({
+                    success: true,
+                    message: `طھظ… طھط³ط¬ظٹظ„ ط§ظ„ط­ط§ظˆظٹط© ${containerNumber} ظپظٹ ط§ظ„ط®ط§ظ†ط© ${slot.slot_code}.`
+                });
+            });
+        });
+    });
+});
+
+app.post('/api/dockmanager/requests', requireRoles(['dockmanager']), (req, res) => {
+    const slotId = Number(req.body.slotId);
+    const driverUserId = Number(req.body.driverUserId);
+
+    if (!slotId || !driverUserId) {
+        return res.status(400).json({ success: false, message: 'ظٹط±ط¬ظ‰ ط§ط®طھظٹط§ط± ط§ظ„ط®ط§ظ†ط© ظˆط§ظ„ط³ط§ط¦ظ‚.' });
+    }
+
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ظٹظ†.' });
+        }
+
+        const slotQuery = `
+            SELECT id, slot_code, container_number, owner_name
+            FROM dock_slots
+            WHERE id = ?
+            LIMIT 1
+        `;
+
+        db.query(slotQuery, [slotId], (slotErr, slotResults) => {
+            if (slotErr) {
+                console.error('Error fetching dock slot for request:', slotErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط®ط§ظ†ط©.' });
+            }
+
+            if (!slotResults.length || !String(slotResults[0].container_number || '').trim()) {
+                return res.status(404).json({ success: false, message: 'ط§ظ„ط®ط§ظ†ط© ط§ظ„ظ…ط­ط¯ط¯ط© ظپط§ط±ط؛ط© ط£ظˆ ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©.' });
+            }
+
+            const slot = slotResults[0];
+            const driverQuery = `
+                SELECT ${userIdColumn} AS user_id, email, full_name
+                FROM Users
+                WHERE ${userIdColumn} = ? AND LOWER(TRIM(role)) = 'driver'
+                LIMIT 1
+            `;
+
+            db.query(driverQuery, [driverUserId], (driverErr, driverResults) => {
+                if (driverErr) {
+                    console.error('Error fetching driver for dock request:', driverErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+                }
+
+                if (!driverResults.length) {
+                    return res.status(404).json({ success: false, message: 'ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ظ…ط­ط¯ط¯ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+                }
+
+                const pendingRequestQuery = `
+                    SELECT request_id
+                    FROM dock_delivery_requests
+                    WHERE slot_id = ?
+                      AND status IN ('pending', 'approved')
+                    ORDER BY request_id DESC
+                    LIMIT 1
+                `;
+
+                db.query(pendingRequestQuery, [slotId], (requestErr, requestResults) => {
+                    if (requestErr) {
+                        console.error('Error checking pending dock request:', requestErr);
+                        return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط§ظ„طھط­ظ‚ظ‚ ظ…ظ† ط§ظ„ط·ظ„ط¨ ط§ظ„ط­ط§ظ„ظٹ.' });
+                    }
+
+                    if (requestResults.length) {
+                        return res.status(409).json({
+                            success: false,
+                            message: 'ظٹظˆط¬ط¯ ط·ظ„ط¨ ظ…ظپطھظˆط­ ط¨ط§ظ„ظپط¹ظ„ ظ„ظ‡ط°ظ‡ ط§ظ„ط®ط§ظ†ط© ط¨ط§ظ†طھط¸ط§ط± ط§ظ„طھظ†ظپظٹط° ط£ظˆ ط§ظ„ط±ط¯.'
+                        });
+                    }
+
+                    const driver = driverResults[0];
+                    const insertRequestQuery = `
+                        INSERT INTO dock_delivery_requests (
+                            slot_id,
+                            container_number,
+                            slot_code,
+                            owner_name,
+                            driver_user_id,
+                            status,
+                            created_by_email
+                        )
+                        VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                    `;
+
+                    db.query(
+                        insertRequestQuery,
+                        [slotId, slot.container_number, slot.slot_code, slot.owner_name || null, driver.user_id, req.authSession.email],
+                        (insertErr) => {
+                            if (insertErr) {
+                                console.error('Error creating dock request:', insertErr);
+                                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط¥ط±ط³ط§ظ„ ط§ظ„ط·ظ„ط¨ ط¥ظ„ظ‰ ط§ظ„ط³ط§ط¦ظ‚.' });
+                            }
+
+                            return res.status(201).json({
+                                success: true,
+                                message: `طھظ… ط¥ط±ط³ط§ظ„ ط·ظ„ط¨ ظ†ظ‚ظ„ ط§ظ„ط­ط§ظˆظٹط© ${slot.container_number} ط¥ظ„ظ‰ ط§ظ„ط³ط§ط¦ظ‚ ${driver.full_name || driver.email}.`
+                            });
+                        }
+                    );
+                });
+            });
+        });
+    });
+});
+
+app.post('/api/dockmanager/containers/deliver', requireRoles(['dockmanager']), (req, res) => {
+    const containerNumber = String(req.body.containerNumber || '').trim().toUpperCase();
+
+    if (!containerNumber) {
+        return res.status(400).json({ success: false, message: 'ظٹط±ط¬ظ‰ ط¥ط¯ط®ط§ظ„ ط±ظ‚ظ… ط§ظ„ط­ط§ظˆظٹط©.' });
+    }
+
+    const findContainerQuery = `
+        SELECT id, slot_code
+        FROM dock_slots
+        WHERE UPPER(container_number) = ?
+        LIMIT 1
+    `;
+
+    db.query(findContainerQuery, [containerNumber], (findErr, results) => {
+        if (findErr) {
+            console.error('Error finding container in dock slots:', findErr);
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط§ظ„ط¨ط­ط« ط¹ظ† ط§ظ„ط­ط§ظˆظٹط©.' });
+        }
+
+        if (!results.length) {
+            return res.status(404).json({ success: false, message: 'ظ‡ط°ظ‡ ط§ظ„ط­ط§ظˆظٹط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط© ط­ط§ظ„ظٹط§ظ‹ ط¯ط§ط®ظ„ ط§ظ„ط±طµظٹظپ.' });
+        }
+
+        const slot = results[0];
+        const clearSlotQuery = `
+            UPDATE dock_slots
+            SET container_number = NULL, owner_name = NULL, container_type = NULL, notes = NULL
+            WHERE id = ?
+        `;
+
+        db.query(clearSlotQuery, [slot.id], (clearErr) => {
+            if (clearErr) {
+                console.error('Error clearing dock slot:', clearErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط³ظ„ظٹظ… ط§ظ„ط­ط§ظˆظٹط© ظ…ظ† ط§ظ„ط±طµظٹظپ.' });
+            }
+
+            db.query(
+                `
+                    UPDATE dock_delivery_requests
+                    SET status = 'delivered', delivered_at = NOW()
+                    WHERE slot_id = ?
+                      AND status IN ('pending', 'approved', 'unavailable')
+                `,
+                [slot.id],
+                (requestUpdateErr) => {
+                    if (requestUpdateErr) {
+                        console.error('Error closing dock requests after delivery:', requestUpdateErr);
+                    }
+
+                    return res.status(200).json({
+                        success: true,
+                        message: `طھظ… طھط³ظ„ظٹظ… ط§ظ„ط­ط§ظˆظٹط© ${containerNumber} ظˆطھظپط±ظٹط؛ ط§ظ„ط®ط§ظ†ط© ${slot.slot_code}.`
+                    });
+                }
+            );
+        });
+    });
+});
+
+app.post('/api/driver/dock-requests/:requestId/respond', requireRoles(['driver']), (req, res) => {
+    const requestId = Number(req.params.requestId);
+    const decision = String(req.body.decision || '').trim().toLowerCase();
+    const allowedDecisions = ['approved', 'unavailable'];
+
+    if (!requestId || !allowedDecisions.includes(decision)) {
+        return res.status(400).json({ success: false, message: 'ظ‚ط±ط§ط± ط§ظ„ط±ط¯ ط؛ظٹط± طµط§ظ„ط­.' });
+    }
+
+    getCurrentUserByEmail(req.authSession.email, (userErr, user) => {
+        if (userErr) {
+            console.error('Error loading current driver for dock response:', userErr);
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+        }
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ط­ط§ظ„ظٹ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        const requestQuery = `
+            SELECT request_id, slot_id, driver_user_id, status, container_number
+            FROM dock_delivery_requests
+            WHERE request_id = ?
+            LIMIT 1
+        `;
+
+        db.query(requestQuery, [requestId], (requestErr, results) => {
+            if (requestErr) {
+                console.error('Error fetching dock request for response:', requestErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط§ظ„ط·ظ„ط¨.' });
+            }
+
+            if (!results.length) {
+                return res.status(404).json({ success: false, message: 'ط§ظ„ط·ظ„ط¨ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+            }
+
+            const request = results[0];
+            if (Number(request.driver_user_id) !== Number(user.user_id)) {
+                return res.status(403).json({ success: false, message: 'ظ‡ط°ط§ ط§ظ„ط·ظ„ط¨ ط؛ظٹط± ظ…ط®طµطµ ظ„ظƒ.' });
+            }
+
+            if (request.status !== 'pending') {
+                return res.status(409).json({ success: false, message: 'طھظ… ط§ظ„ط±ط¯ ط¹ظ„ظ‰ ظ‡ط°ط§ ط§ظ„ط·ظ„ط¨ ظ…ط³ط¨ظ‚ط§ظ‹.' });
+            }
+
+            const updateQuery = `
+                UPDATE dock_delivery_requests
+                SET status = ?, responded_at = NOW()
+                WHERE request_id = ?
+            `;
+
+            db.query(updateQuery, [decision, requestId], (updateErr) => {
+                if (updateErr) {
+                    console.error('Error updating dock request response:', updateErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط­ظپط¸ ط±ط¯ ط§ظ„ط³ط§ط¦ظ‚.' });
+                }
+
+                return res.status(200).json({
+                    success: true,
+                    message: decision === 'approved'
+                        ? `طھظ…طھ ط§ظ„ظ…ظˆط§ظپظ‚ط© ط¹ظ„ظ‰ ط·ظ„ط¨ ظ†ظ‚ظ„ ط§ظ„ط­ط§ظˆظٹط© ${request.container_number}.`
+                        : `طھظ… ط¥ط±ط³ط§ظ„ ط±ط¯ "ط؛ظٹط± ظ…طھط§ط­" ظ„ظ„ط­ط§ظˆظٹط© ${request.container_number}.`
+                });
+            });
+        });
+    });
+});
+
+app.post('/api/driver/dock-requests/:requestId/finish', requireRoles(['driver']), (req, res) => {
+    const requestId = Number(req.params.requestId);
+    const outcome = String(req.body.outcome || '').trim().toLowerCase();
+    const note = String(req.body.note || '').trim();
+    const allowedOutcomes = ['completed', 'failed'];
+
+    if (!requestId || !allowedOutcomes.includes(outcome)) {
+        return res.status(400).json({ success: false, message: 'ظ†طھظٹط¬ط© ط§ظ„ظ…ظ‡ظ…ط© ط؛ظٹط± طµط§ظ„ط­ط©.' });
+    }
+
+    if (outcome === 'failed' && !note) {
+        return res.status(400).json({ success: false, message: 'ظٹط±ط¬ظ‰ ظƒطھط§ط¨ط© ط³ط¨ط¨ طھط¹ط°ط± ط§ظƒطھظ…ط§ظ„ ط§ظ„ظ…ظ‡ظ…ط©.' });
+    }
+
+    getCurrentUserByEmail(req.authSession.email, (userErr, user) => {
+        if (userErr) {
+            console.error('Error loading current driver for dock finish:', userErr);
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+        }
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'ط§ظ„ط³ط§ط¦ظ‚ ط§ظ„ط­ط§ظ„ظٹ ط؛ظٹط± ظ…ظˆط¬ظˆط¯.' });
+        }
+
+        const requestQuery = `
+            SELECT request_id, slot_id, driver_user_id, status, container_number
+            FROM dock_delivery_requests
+            WHERE request_id = ?
+            LIMIT 1
+        `;
+
+        db.query(requestQuery, [requestId], (requestErr, results) => {
+            if (requestErr) {
+                console.error('Error fetching dock request for finish:', requestErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط§ظ„ظ…ظ‡ظ…ط©.' });
+            }
+
+            if (!results.length) {
+                return res.status(404).json({ success: false, message: 'ط§ظ„ظ…ظ‡ظ…ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©.' });
+            }
+
+            const request = results[0];
+            if (Number(request.driver_user_id) !== Number(user.user_id)) {
+                return res.status(403).json({ success: false, message: 'ظ‡ط°ظ‡ ط§ظ„ظ…ظ‡ظ…ط© ط؛ظٹط± ظ…ط®طµطµط© ظ„ظƒ.' });
+            }
+
+            if (request.status !== 'approved') {
+                return res.status(409).json({ success: false, message: 'ظ„ط§ ظٹظ…ظƒظ† ط¥ظ†ظ‡ط§ط، ظ‡ط°ظ‡ ط§ظ„ظ…ظ‡ظ…ط© ظ‚ط¨ظ„ ط§ظ„ظ…ظˆط§ظپظ‚ط© ط¹ظ„ظٹظ‡ط§.' });
+            }
+
+            const updateQuery = `
+                UPDATE dock_delivery_requests
+                SET status = ?, response_note = ?, responded_at = COALESCE(responded_at, NOW())
+                WHERE request_id = ?
+            `;
+
+            db.query(updateQuery, [outcome, note || 'طھظ… طھظ†ظپظٹط° ط§ظ„ظ…ظ‡ظ…ط©', requestId], (updateErr) => {
+                if (updateErr) {
+                    console.error('Error finishing dock request:', updateErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط­ظپط¸ ظ†طھظٹط¬ط© ط§ظ„ظ…ظ‡ظ…ط©.' });
+                }
+
+                if (outcome !== 'completed') {
+                    return res.status(200).json({
+                        success: true,
+                        message: `طھظ… ط¥ط±ط³ط§ظ„ ط¥ط´ط¹ط§ط± طھط¹ط°ط± ط§ظƒطھظ…ط§ظ„ ظ…ظ‡ظ…ط© ط§ظ„ط­ط§ظˆظٹط© ${request.container_number}.`
+                    });
+                }
+
+                const clearSlotQuery = `
+                    UPDATE dock_slots
+                    SET container_number = NULL, owner_name = NULL, container_type = NULL, notes = NULL
+                    WHERE id = ?
+                `;
+
+                db.query(clearSlotQuery, [request.slot_id], (clearErr) => {
+                    if (clearErr) {
+                        console.error('Error clearing dock slot after completion:', clearErr);
+                        return res.status(500).json({ success: false, message: 'طھظ… ط­ظپط¸ ط§ظ„ظ†طھظٹط¬ط© ظ„ظƒظ† طھط¹ط°ط± طھط­ط¯ظٹط« ط®ط§ظ†ط© ط§ظ„ط±طµظٹظپ.' });
+                    }
+
+                    return res.status(200).json({
+                        success: true,
+                        message: `طھظ… ط¥ط±ط³ط§ظ„ ط¥ط´ط¹ط§ط± طھظ†ظپظٹط° ظ…ظ‡ظ…ط© ط§ظ„ط­ط§ظˆظٹط© ${request.container_number} ط¥ظ„ظ‰ ظ…ط¯ظٹط± ط§ظ„ط±طµظٹظپ.`
+                    });
+                });
+            });
+        });
+    });
+});
+
+app.get('/api/driver-dashboard', (req, res, next) => {
+    const email = String(req.query.email || '').trim();
+
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'ط§ظ„ط¨ط±ظٹط¯ ط§ظ„ط¥ظ„ظƒطھط±ظˆظ†ظٹ ظ…ط·ظ„ظˆط¨.' });
+    }
+
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.' });
+        }
+
+        const userQuery = `
+            SELECT ${userIdColumn} AS user_id, email, role, full_name, shift, phone
+            FROM Users
+            WHERE email = ?
+            LIMIT 1
+        `;
+
+        db.query(userQuery, [email], (userErr, userResults) => {
+            if (userErr) {
+                console.error('Database error on fetching driver user:', userErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط¬ظ„ط¨ ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+            }
+
+            if (!userResults.length) {
+                return res.status(404).json({ success: false, message: 'ظ„ظ… ظٹطھظ… ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ط§ظ„ط³ط§ط¦ظ‚.' });
+            }
+
+            const user = userResults[0];
+            const userName = String(user.full_name || '').trim();
+            const machineParams = [user.user_id, email];
+            let machineQuery = `
+                SELECT
+                    machine_id,
+                    machine_code,
+                    machine_name,
+                    category,
+                    location_id,
+                    status,
+                    operating_hours,
+                    purchase_date,
+                    last_maintenance_date,
+                    next_maintenance_date,
+                    facility_name,
+                    notes
+                FROM Machines
+                WHERE driver_user_id = ?
+                   OR LOWER(COALESCE(notes, '')) LIKE CONCAT('%', LOWER(?), '%')
+            `;
+
+            if (userName) {
+                machineQuery += ` OR LOWER(COALESCE(facility_name, '')) = LOWER(?) OR LOWER(COALESCE(notes, '')) LIKE CONCAT('%', LOWER(?), '%')`;
+                machineParams.push(userName, userName);
+            }
+
+            machineQuery += `
+                ORDER BY
+                    CASE
+                        WHEN driver_user_id = ? THEN 0
+                        ELSE 1
+                    END,
+                    CASE
+                        WHEN status = 'ظپظٹ ط§ظ„ط®ط¯ظ…ط©' THEN 0
+                        WHEN status = 'ط¬ط§ظ‡ط²ط©' THEN 1
+                        WHEN status = 'طھط­طھ ط§ظ„طµظٹط§ظ†ط©' THEN 2
+                        ELSE 3
+                    END,
+                    machine_id ASC
+                LIMIT 1
+            `;
+            machineParams.push(user.user_id);
+
+            db.query(machineQuery, machineParams, (machineErr, machineResults) => {
+                if (machineErr) {
+                    console.error('Database error on fetching driver machine:', machineErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ط¬ظ„ط¨ ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط±ظƒط¨ط©.' });
+                }
+
+                const machine = machineResults[0] || null;
+                const now = new Date();
+                const fallbackShift = now.getHours() < 14 ? 'ط§ظ„طµط¨ط§ط­ظٹط©' : 'ط§ظ„ظ…ط³ط§ط¦ظٹط©';
+                const initialsSource = userName || email;
+                const initials = initialsSource
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map((part) => part.charAt(0).toUpperCase())
+                    .join(' ') || 'ط³';
+
+                let statusText = 'ط¨ط§ظ†طھط¸ط§ط± ظ…ظ‡ظ…ط© ط¬ط¯ظٹط¯ط©';
+                let statusClass = 'status-waiting';
+                let note = 'ظ„ط§ طھظˆط¬ط¯ ظ…ظ‡ط§ظ… ط­ط§ظ„ظٹط© ظ…ط±ط³ظ„ط© ظ…ظ† ظ…ط¯ظٹط± ط§ظ„ط±طµظٹظپ.';
+
+                if (machine) {
+                    if (machine.status === 'ظپظٹ ط§ظ„ط®ط¯ظ…ط©' || machine.status === 'ط¬ط§ظ‡ط²ط©') {
+                        statusText = 'ط¬ط§ظ‡ط² ظ„ظ„طھظ†ظپظٹط°';
+                        statusClass = 'status-ready';
+                    } else if (machine.status === 'طھط­طھ ط§ظ„طµظٹط§ظ†ط©') {
+                        statusText = 'ط§ظ„ظ…ط±ظƒط¨ط© طھط­طھ ط§ظ„طµظٹط§ظ†ط©';
+                        statusClass = 'status-alert';
+                    } else {
+                        statusText = machine.status || 'ط­ط§ظ„ط© ط؛ظٹط± ظ…ط­ط¯ط¯ط©';
+                        statusClass = 'status-waiting';
+                    }
+
+                    note = machine.notes || `ط§ظ„ظ…ط±ظƒط¨ط© ${machine.machine_name} ط¬ط§ظ‡ط²ط© ط¹ظ†ط¯ ظˆط¬ظˆط¯ ط·ظ„ط¨ ط¬ط¯ظٹط¯ ظ…ظ† ظ…ط¯ظٹط± ط§ظ„ط±طµظٹظپ.`;
+                }
+
+                const dockRequestQuery = `
+                    SELECT request_id, container_number, slot_code, status, created_at, response_note
+                    FROM dock_delivery_requests
+                    WHERE driver_user_id = ?
+                      AND status IN ('pending', 'approved')
+                    ORDER BY
+                        CASE
+                            WHEN status = 'pending' THEN 0
+                            WHEN status = 'approved' THEN 1
+                            ELSE 3
+                        END,
+                        created_at DESC
+                `;
+
+                db.query(dockRequestQuery, [user.user_id], (dockRequestErr, dockRequestResults) => {
+                    if (dockRequestErr) {
+                        console.error('Database error on fetching dock requests for driver:', dockRequestErr);
+                        return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ظ…ظٹظ„ ط·ظ„ط¨ط§طھ ط§ظ„ط±طµظٹظپ.' });
+                    }
+
+                    const tasks = dockRequestResults.map((request) => ({
+                        id: `DOCK-${request.request_id}`,
+                        cargo: `ظ†ظ‚ظ„ ط§ظ„ط­ط§ظˆظٹط© ${request.container_number}`,
+                        pickup: `ط§ظ„ط®ط§ظ†ط© ${request.slot_code}`,
+                        destination: 'ط®ط§ط±ط¬ ط§ظ„ط±طµظٹظپ',
+                        time: new Date(request.created_at).toLocaleString('ar-SA'),
+                        priority: 'ط¹ط§ظ„ظٹط©',
+                        priorityClass: 'priority-high',
+                        status: request.status === 'pending' ? 'ط¨ط§ظ†طھط¸ط§ط± ط±ط¯ظƒ' : 'ط¨ط§ظ†طھط¸ط§ط± ط§ظ„طھظ†ظپظٹط°',
+                        statusClass: request.status === 'pending' ? 'status-waiting' : 'status-ready',
+                        actions: request.status === 'pending'
+                            ? [
+                                { label: 'ظ…ظˆط§ظپظ‚', decision: 'approved', className: 'table-action approve', stage: 'respond' },
+                                { label: 'ط؛ظٹط± ظ…طھط§ط­', decision: 'unavailable', className: 'table-action unavailable', stage: 'respond' }
+                            ]
+                            : [
+                                { label: 'طھظ… ط§ظ„طھظ†ظپظٹط°', decision: 'completed', className: 'table-action complete', stage: 'finish' },
+                                { label: 'طھط¹ط°ط± ط§ظ„ط§ظƒطھظ…ط§ظ„', decision: 'failed', className: 'table-action fail', stage: 'finish' }
+                            ],
+                        requestId: request.request_id
+                    }));
+
+                    return res.status(200).json({
+                        success: true,
+                        profile: {
+                            id: user.user_id,
+                            email: user.email,
+                            name: user.full_name || user.email,
+                            role: 'ط³ط§ط¦ظ‚',
+                            shift: user.shift || fallbackShift,
+                            status: statusText,
+                            statusClass,
+                            initials,
+                            phone: user.phone || 'ط؛ظٹط± ظ…ط¶ط§ظپ',
+                            note
+                        },
+                        vehicle: machine ? {
+                            id: machine.machine_id,
+                            code: machine.machine_code,
+                            name: machine.machine_name,
+                            category: machine.category || 'ط؛ظٹط± ظ…ط­ط¯ط¯ط©',
+                            location: machine.location_id || 'ط؛ظٹط± ظ…ط­ط¯ط¯',
+                            status: machine.status || 'ط؛ظٹط± ظ…ط­ط¯ط¯ط©',
+                            hours: Number(machine.operating_hours || 0),
+                            purchaseDate: machine.purchase_date,
+                            lastMaintenanceDate: machine.last_maintenance_date,
+                            nextMaintenanceDate: machine.next_maintenance_date,
+                            facility: machine.facility_name || 'ط؛ظٹط± ظ…ط­ط¯ط¯'
+                        } : null,
+                        tasks
+                    });
+                });
+            });
+        });
+    });
+});
+app.get('/api/drivers', (req, res) => {
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({
+                success: false,
+                message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.'
+            });
+        }
+
+        const query = `
+            SELECT u.${userIdColumn} AS user_id, u.email, u.role, u.full_name, u.shift, u.phone,
+                   m.machine_id AS assigned_machine_id,
+                   m.machine_name AS assigned_machine_name
+            FROM Users u
+            LEFT JOIN Machines m ON m.driver_user_id = u.${userIdColumn}
+            WHERE LOWER(TRIM(u.role)) = 'driver'
+            ORDER BY u.full_name ASC, u.${userIdColumn} ASC
+        `;
+
+        db.query(query, (err, results) => {
+            if (err) {
+                console.error('Database error on fetching drivers:', err);
+                return res.status(500).json({
+                    success: false,
+                    message: 'طھط¹ط°ط± ط¬ظ„ط¨ ظ‚ط§ط¦ظ…ط© ط§ظ„ط³ط§ط¦ظ‚ظٹظ†.'
+                });
+            }
+
+            res.status(200).json({
+                success: true,
+                drivers: results
+            });
+        });
+    });
+});
+
+/* app.put('/api/drivers/:userId', (req, res) => {
+    const userId = Number(req.params.userId);
+    const { full_name, phone, shift, vehicle_location, vehicle_status } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ success: false, message: 'ظ…ط¹ط±ظپ ط§ظ„ط³ط§ط¦ظ‚ ط؛ظٹط± طµط§ظ„ط­.' });
+    }
+
+    const normalizedFullName = String(full_name || '').trim() || null;
+    const normalizedPhone = String(phone || '').trim() || null;
+    const normalizedShift = String(shift || '').trim() || null;
+    const normalizedLocation = String(vehicle_location || '').trim() || null;
+    const normalizedStatus = String(vehicle_status || '').trim() || null;
+
+    const allowedStatuses = ['ط¬ط§ظ‡ط²ط©', 'طھط­طھ ط§ظ„طµظٹط§ظ†ط©', 'ظ…طھظˆظ‚ظپط©', 'ظپظٹ ط§ظ„ط®ط¯ظ…ط©'];
+    if (normalizedStatus && !allowedStatuses.includes(normalizedStatus)) {
+        return res.status(400).json({ success: false, message: 'ط­ط§ظ„ط© ط§ظ„ظ…ط±ظƒط¨ط© ط؛ظٹط± طµط§ظ„ط­ط©.' });
+    }
+
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.' });
+        }
+
+        const fetchUserQuery = `
+        SELECT ${userIdColumn} AS user_id, email, full_name
+        FROM Users
+        WHERE ${userIdColumn} = ? AND LOWER(TRIM(role)) = 'driver'
+        LIMIT 1
+    `;
+
+    db.query(fetchUserQuery, [userId], (userErr, userResults) => {
+        if (userErr) {
+            console.error('Database error on fetching driver before update:', userErr);
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+        }
+
+        if (!userResults.length) {
+            return res.status(404).json({ success: false, message: 'ظ„ظ… ظٹطھظ… ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ط§ظ„ط³ط§ط¦ظ‚.' });
+        }
+
+        const user = userResults[0];
+        const previousFullName = String(user.full_name || '').trim();
+        const updateUserQuery = `UPDATE Users SET full_name = ?, phone = ?, shift = ? WHERE ${userIdColumn} = ?`;
+
+        db.query(updateUserQuery, [normalizedFullName, normalizedPhone, normalizedShift, userId], (updateUserErr) => {
+            if (updateUserErr) {
+                console.error('Database error on updating driver fields:', updateUserErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+            }
+
+            const machineParams = [userId, user.email];
+            let machineQuery = `
+                SELECT machine_id
+                FROM Machines
+                WHERE driver_user_id = ?
+                   OR LOWER(COALESCE(notes, '')) LIKE CONCAT('%', LOWER(?), '%')
+            `;
+
+            if (previousFullName) {
+                machineQuery += ` OR LOWER(COALESCE(facility_name, '')) = LOWER(?) OR LOWER(COALESCE(notes, '')) LIKE CONCAT('%', LOWER(?), '%')`;
+                machineParams.push(previousFullName, previousFullName);
+            }
+
+            machineQuery += `
+                ORDER BY
+                    CASE
+                        WHEN driver_user_id = ? THEN 0
+                        ELSE 1
+                    END,
+                    machine_id ASC
+                LIMIT 1
+            `;
+            machineParams.push(userId);
+
+            db.query(machineQuery, machineParams, (machineErr, machineResults) => {
+                if (machineErr) {
+                    console.error('Database error on fetching related machine for driver update:', machineErr);
+                    return res.status(500).json({ success: false, message: 'طھظ… طھط­ط¯ظٹط« ط§ظ„ظ…ظ†ط§ظˆط¨ط© ظˆظ„ظƒظ† طھط¹ط°ط± ط§ظ„ظˆطµظˆظ„ ط¥ظ„ظ‰ ط§ظ„ظ…ط±ظƒط¨ط©.' });
+                }
+
+                if (!machineResults.length) {
+                    return res.status(200).json({
+                        success: true,
+                        message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚. ظ„ط§ طھظˆط¬ط¯ ظ…ط±ظƒط¨ط© ظ…ط±طھط¨ط·ط© ظ„طھط­ط¯ظٹط«ظ‡ط§.'
+                    });
+                }
+
+                const machineId = machineResults[0].machine_id;
+                const updateMachineQuery = `
+                    UPDATE Machines
+                    SET location_id = COALESCE(?, location_id),
+                        status = COALESCE(?, status),
+                        facility_name = CASE
+                            WHEN ? IS NOT NULL AND ? <> '' AND LOWER(COALESCE(facility_name, '')) = LOWER(?)
+                                THEN ?
+                            ELSE facility_name
+                        END
+                    WHERE machine_id = ?
+                `;
+
+                db.query(
+                    updateMachineQuery,
+                    [normalizedLocation, normalizedStatus, normalizedFullName, normalizedFullName, previousFullName, normalizedFullName, machineId],
+                    (updateMachineErr) => {
+                    if (updateMachineErr) {
+                        console.error('Database error on updating driver machine:', updateMachineErr);
+                        return res.status(500).json({ success: false, message: 'طھظ… طھط­ط¯ظٹط« ط§ظ„ظ…ظ†ط§ظˆط¨ط© ظ„ظƒظ† طھط¹ط°ط± طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط±ظƒط¨ط©.' });
+                    }
+
+                    return res.status(200).json({
+                        success: true,
+                        message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ ظˆط§ظ„ظ…ط±ظƒط¨ط© ط¨ظ†ط¬ط§ط­.'
+                    });
+                });
+            });
+        });
+    });
+*/
+
+app.put('/api/drivers/:userId', (req, res) => {
+    const userId = Number(req.params.userId);
+    const { full_name, phone, shift, vehicle_location, vehicle_status } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ success: false, message: 'ظ…ط¹ط±ظپ ط§ظ„ط³ط§ط¦ظ‚ ط؛ظٹط± طµط§ظ„ط­.' });
+    }
+
+    const normalizedFullName = String(full_name || '').trim() || null;
+    const normalizedPhone = String(phone || '').trim() || null;
+    const normalizedShift = String(shift || '').trim() || null;
+    const normalizedLocation = String(vehicle_location || '').trim() || null;
+    const normalizedStatus = String(vehicle_status || '').trim() || null;
+
+    const allowedStatuses = ['ط¬ط§ظ‡ط²ط©', 'طھط­طھ ط§ظ„طµظٹط§ظ†ط©', 'ظ…طھظˆظ‚ظپط©', 'ظپظٹ ط§ظ„ط®ط¯ظ…ط©'];
+    if (normalizedStatus && !allowedStatuses.includes(normalizedStatus)) {
+        return res.status(400).json({ success: false, message: 'ط­ط§ظ„ط© ط§ظ„ظ…ط±ظƒط¨ط© ط؛ظٹط± طµط§ظ„ط­ط©.' });
+    }
+
+    getUsersIdColumn((columnErr, userIdColumn) => {
+        if (columnErr) {
+            return res.status(500).json({ success: false, message: 'طھط¹ط°ط± ظ‚ط±ط§ط،ط© ط¨ظ†ظٹط© ط¬ط¯ظˆظ„ ط§ظ„ظ…ط³طھط®ط¯ظ…ظٹظ†.' });
+        }
+
+        const fetchUserQuery = `
+            SELECT ${userIdColumn} AS user_id, email, full_name
+            FROM Users
+            WHERE ${userIdColumn} = ? AND LOWER(TRIM(role)) = 'driver'
+            LIMIT 1
+        `;
+
+        db.query(fetchUserQuery, [userId], (userErr, userResults) => {
+            if (userErr) {
+                console.error('Database error on fetching driver before update:', userErr);
+                return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+            }
+
+            if (!userResults.length) {
+                return res.status(404).json({ success: false, message: 'ظ„ظ… ظٹطھظ… ط§ظ„ط¹ط«ظˆط± ط¹ظ„ظ‰ ط§ظ„ط³ط§ط¦ظ‚.' });
+            }
+
+            const user = userResults[0];
+            const previousFullName = String(user.full_name || '').trim();
+            const updateUserQuery = `UPDATE Users SET full_name = ?, phone = ?, shift = ? WHERE ${userIdColumn} = ?`;
+
+            db.query(updateUserQuery, [normalizedFullName, normalizedPhone, normalizedShift, userId], (updateUserErr) => {
+                if (updateUserErr) {
+                    console.error('Database error on updating driver fields:', updateUserErr);
+                    return res.status(500).json({ success: false, message: 'طھط¹ط°ط± طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚.' });
+                }
+
+                const machineParams = [userId, user.email];
+                let machineQuery = `
+                    SELECT machine_id
+                    FROM Machines
+                    WHERE driver_user_id = ?
+                       OR LOWER(COALESCE(notes, '')) LIKE CONCAT('%', LOWER(?), '%')
+                `;
+
+                if (previousFullName) {
+                    machineQuery += ` OR LOWER(COALESCE(facility_name, '')) = LOWER(?) OR LOWER(COALESCE(notes, '')) LIKE CONCAT('%', LOWER(?), '%')`;
+                    machineParams.push(previousFullName, previousFullName);
+                }
+
+                machineQuery += `
+                    ORDER BY
+                        CASE
+                            WHEN driver_user_id = ? THEN 0
+                            ELSE 1
+                        END,
+                        machine_id ASC
+                    LIMIT 1
+                `;
+                machineParams.push(userId);
+
+                db.query(machineQuery, machineParams, (machineErr, machineResults) => {
+                    if (machineErr) {
+                        console.error('Database error on fetching related machine for driver update:', machineErr);
+                        return res.status(500).json({ success: false, message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ ظ„ظƒظ† طھط¹ط°ط± ط§ظ„ظˆطµظˆظ„ ط¥ظ„ظ‰ ط§ظ„ظ…ط±ظƒط¨ط©.' });
+                    }
+
+                    if (!machineResults.length) {
+                        return res.status(200).json({
+                            success: true,
+                            message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚. ظ„ط§ طھظˆط¬ط¯ ظ…ط±ظƒط¨ط© ظ…ط±طھط¨ط·ط© ظ„طھط­ط¯ظٹط«ظ‡ط§.'
+                        });
+                    }
+
+                    const machineId = machineResults[0].machine_id;
+                    const updateMachineQuery = `
+                        UPDATE Machines
+                        SET location_id = COALESCE(?, location_id),
+                            status = COALESCE(?, status),
+                            facility_name = CASE
+                                WHEN ? IS NOT NULL AND ? <> '' AND LOWER(COALESCE(facility_name, '')) = LOWER(?)
+                                    THEN ?
+                                ELSE facility_name
+                            END
+                        WHERE machine_id = ?
+                    `;
+
+                    db.query(
+                        updateMachineQuery,
+                        [normalizedLocation, normalizedStatus, normalizedFullName, normalizedFullName, previousFullName, normalizedFullName, machineId],
+                        (updateMachineErr) => {
+                            if (updateMachineErr) {
+                                console.error('Database error on updating driver machine:', updateMachineErr);
+                                return res.status(500).json({ success: false, message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ ظ„ظƒظ† طھط¹ط°ط± طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ظ…ط±ظƒط¨ط©.' });
+                            }
+
+                            return res.status(200).json({
+                                success: true,
+                                message: 'طھظ… طھط­ط¯ظٹط« ط¨ظٹط§ظ†ط§طھ ط§ظ„ط³ط§ط¦ظ‚ ظˆط§ظ„ظ…ط±ظƒط¨ط© ط¨ظ†ط¬ط§ط­.'
+                            });
+                        }
+                    );
+                });
+            });
+        });
+    });
+});
+
+app.listen(port, () => {
+    console.log(`Server listening at http://localhost:${port}`);
+});
